@@ -1,0 +1,95 @@
+19:24:44  PoC Alerta Futuros — 8 pares · RSI(2) ≥ 90 / ≤ 5 · setores 30% · ajuste ±0,5%
+19:24:47  Histórico carregado (300 velas 5m por par). Relógio Binance -102 ms vs. local.
+19:24:47  WebSocket conectado: 8 pares, streams 5m + 15m.
+19:25:00  19:25 LINKUSDT  fech      10,863 | RSI(2)  22,1        | 15m 0,599% setor C      | lat 216 ms
+19:25:00  19:25 BTCUSDT   fech   75.661,90 | RSI(2)  17,8        | 15m 0,336% setor C      | lat 317 ms
+19:25:00  19:25 ETHUSDT   fech    2.392,79 | RSI(2)  29,8        | 15m 0,397% setor C      | lat 566 ms
+19:25:01  19:25 XRPUSDT   fech      1,2812 | RSI(2)  19,4        | 15m 0,726% setor C      | lat 980 ms
+19:25:01  19:25 SOLUSDT   fech       97,72 | RSI(2)  29,3        | 15m 0,563% setor C      | lat 981 ms
+19:25:01  19:25 LTCUSDT   fech       51,10 | RSI(2)  25,7        | 15m 0,450% setor C      | lat 981 ms
+19:25:01  19:25 BNBUSDT   fech      719,33 | RSI(2)  26,1        | 15m 0,307% setor C      | lat 983 ms
+19:25:01  19:25 DOGEUSDT  fech     0,07990 | RSI(2)  17,9        | 15m 0,764% setor C      | lat 984 ms
+19:30:00  19:30 DOGEUSDT  fech     0,07996 | RSI(2)  34,7        | 15m 0,764% setor C      | lat 239 ms
+19:30:00  19:30 XRPUSDT   fech      1,2823 | RSI(2)  40,7        | 15m 0,726% setor C      | lat 243 ms
+19:30:00  19:30 BTCUSDT   fech   75.720,60 | RSI(2)  48,8        | 15m 0,336% setor C      | lat 723 ms
+19:30:01  19:30 LTCUSDT   fech       51,05 | RSI(2)  15,9        | 15m 0,470% setor C      | lat 946 ms
+19:30:01  19:30 SOLUSDT   fech       97,75 | RSI(2)  40,2        | 15m 0,563% setor C      | lat 951 ms
+19:30:01  19:30 ETHUSDT   fech    2.393,31 | RSI(2)  40,3        | 15m 0,397% setor C      | lat 953 ms
+19:30:01  19:30 BNBUSDT   fech      719,84 | RSI(2)  59,6        | 15m 0,307% setor B      | lat 953 ms
+19:30:01  19:30 LINKUSDT  fech      10,873 | RSI(2)  46,8        | 15m 0,599% setor C      | lat 953 ms
+19:35:00  19:35 SOLUSDT   fech       97,55 | RSI(2)  13,1        | 15m 0,215% setor C      | lat 495 ms
+19:35:00  19:35 BNBUSDT   fech      719,40 | RSI(2)  33,4        | 15m 0,071% setor C      | lat 496 ms
+19:35:00  19:35 XRPUSDT   fech      1,2820 | RSI(2)  35,5        | 15m 0,172% setor B      | lat 496 ms
+19:35:00  19:35 BTCUSDT   fech   75.655,30 | RSI(2)  26,5        | 15m 0,086% setor C      | lat 496 ms
+19:35:00  19:35 ETHUSDT   fech    2.391,37 | RSI(2)  19,0        | 15m 0,097% setor C      | lat 839 ms
+19:35:01  19:35 LINKUSDT  fech      10,874 | RSI(2)  49,9        | 15m 0,175% setor B      | lat 1274 ms
+19:35:01  19:35 DOGEUSDT  fech     0,07992 | RSI(2)  27,2        | 15m 0,125% setor B      | lat 1374 ms
+19:35:01  19:35 LTCUSDT   fech       50,96 | RSI(2)   6,7        | 15m 0,196% setor C      | lat 1518 ms
+19:40:00  19:40 DOGEUSDT  fech     0,08009 | RSI(2)  74,2        | 15m 0,288% setor A      | lat 258 ms
+19:40:00  19:40 BTCUSDT   fech   75.741,60 | RSI(2)  66,7        | 15m 0,157% setor A      | lat 258 ms
+19:40:00  19:40 BNBUSDT   fech      720,12 | RSI(2)  72,7        | 15m 0,110% setor A      | lat 258 ms
+19:40:00  19:40 ETHUSDT   fech    2.395,78 | RSI(2)  76,2        | 15m 0,220% setor A      | lat 439 ms
+19:40:00  19:40 XRPUSDT   fech      1,2864 | RSI(2)  86,2        | 15m 0,461% setor A      | lat 440 ms
+19:40:00  19:40 LTCUSDT   fech       50,94 | RSI(2)   5,4        | 15m 0,334% setor B      | lat 440 ms
+19:40:01  19:40 LINKUSDT  fech      10,893 | RSI(2)  84,6        | 15m 0,258% setor A      | lat 1041 ms
+19:40:01  19:40 SOLUSDT   fech       97,62 | RSI(2)  41,0        | 15m 0,256% setor B      | lat 1041 ms
+19:45:00  19:45 ETHUSDT   fech    2.397,14 | RSI(2)  83,4        | 15m 0,273% setor A      | lat 349 ms
+19:45:00  19:45 BNBUSDT   fech      720,18 | RSI(2)  75,1        | 15m 0,118% setor A      | lat 354 ms
+19:45:00  19:45 LINKUSDT  fech      10,918 | RSI(2)  94,6 ACIMA  | 15m 0,515% setor A      | lat 640 ms  >>> SINAL X: alvo W 10,973
+19:45:01  19:45 SOLUSDT   fech       97,60 | RSI(2)  34,6        | 15m 0,256% setor B      | lat 1214 ms
+19:45:01  19:45 DOGEUSDT  fech     0,08017 | RSI(2)  84,0        | 15m 0,388% setor A      | lat 1509 ms
+19:45:01  19:45 XRPUSDT   fech      1,2875 | RSI(2)  90,1 ACIMA  | 15m 0,539% setor A      | lat 1695 ms  >>> SINAL X: alvo W 1,2939
+19:45:01  19:45 BTCUSDT   fech   75.782,70 | RSI(2)  78,1        | 15m 0,212% setor A      | lat 1737 ms
+19:45:03  19:45 LTCUSDT   fech       51,06 | RSI(2)  72,6        | 15m 0,393% setor A      | lat 3184 ms
+19:50:33  Conexão perdida (ConnectionError). Reconectando em 1s…
+19:50:37  Histórico carregado (300 velas 5m por par). Relógio Binance +111 ms vs. local.
+19:50:37  WebSocket conectado: 8 pares, streams 5m + 15m.
+19:55:00  19:55 DOGEUSDT  fech     0,07994 | RSI(2)  19,5        | 15m 0,426% setor C      | lat 293 ms
+19:55:00  19:55 LINKUSDT  fech      10,881 | RSI(2)  26,4        | 15m 0,487% setor C      | lat 319 ms
+19:55:00  19:55 BNBUSDT   fech      718,97 | RSI(2)  12,1        | 15m 0,220% setor C      | lat 360 ms
+19:55:00  19:55 XRPUSDT   fech      1,2849 | RSI(2)  29,5        | 15m 0,358% setor C      | lat 681 ms
+19:55:00  19:55 ETHUSDT   fech    2.390,46 | RSI(2)  16,5        | 15m 0,320% setor C      | lat 683 ms
+19:55:00  19:55 SOLUSDT   fech       97,47 | RSI(2)   8,8        | 15m 0,298% setor B      | lat 781 ms
+19:55:00  19:55 BTCUSDT   fech   75.626,00 | RSI(2)  16,8        | 15m 0,242% setor C      | lat 890 ms
+19:55:03  19:55 LTCUSDT   fech       50,97 | RSI(2)  26,1        | 15m 0,314% setor C      | lat 3268 ms
+20:00:00  20:00 SOLUSDT   fech       97,43 | RSI(2)   5,4        | 15m 0,298% setor C      | lat 332 ms
+20:00:00  20:00 XRPUSDT   fech      1,2857 | RSI(2)  54,2        | 15m 0,358% setor B      | lat 335 ms
+20:00:00  20:00 BTCUSDT   fech   75.647,10 | RSI(2)  36,1        | 15m 0,242% setor C      | lat 348 ms
+20:00:00  20:00 LINKUSDT  fech      10,881 | RSI(2)  26,4        | 15m 0,487% setor C      | lat 428 ms
+20:00:00  20:00 BNBUSDT   fech      719,36 | RSI(2)  49,7        | 15m 0,220% setor B      | lat 469 ms
+20:00:00  20:00 DOGEUSDT  fech     0,07994 | RSI(2)  19,5        | 15m 0,426% setor C      | lat 612 ms
+20:00:00  20:00 ETHUSDT   fech    2.391,22 | RSI(2)  34,1        | 15m 0,325% setor C      | lat 613 ms
+20:00:03  20:00 LTCUSDT   fech       50,96 | RSI(2)  22,3        | 15m 0,314% setor C      | lat 3260 ms
+20:05:00  20:05 XRPUSDT   fech      1,2874 | RSI(2)  81,6        | 15m 0,288% setor A      | lat 252 ms
+20:05:00  20:05 BTCUSDT   fech   75.697,70 | RSI(2)  69,8        | 15m 0,136% setor A      | lat 343 ms
+20:05:00  20:05 SOLUSDT   fech       97,50 | RSI(2)  59,8        | 15m 0,195% setor A      | lat 361 ms
+20:05:00  20:05 ETHUSDT   fech    2.393,19 | RSI(2)  68,6        | 15m 0,202% setor A      | lat 371 ms
+20:05:00  20:05 BNBUSDT   fech      719,68 | RSI(2)  70,5        | 15m 0,128% setor A      | lat 750 ms
+20:05:00  20:05 DOGEUSDT  fech     0,08001 | RSI(2)  63,9        | 15m 0,250% setor A      | lat 781 ms
+20:05:01  20:05 LINKUSDT  fech      10,882 | RSI(2)  34,0        | 15m 0,304% setor B      | lat 1726 ms
+20:05:03  20:05 LTCUSDT   fech       50,96 | RSI(2)  22,3        | 15m 0,157% setor B      | lat 3266 ms
+20:10:00  20:10 ETHUSDT   fech    2.396,43 | RSI(2)  88,4        | 15m 0,345% setor A      | lat 365 ms
+20:10:00  20:10 LTCUSDT   fech       51,01 | RSI(2)  80,2        | 15m 0,216% setor A      | lat 433 ms
+20:10:00  20:10 DOGEUSDT  fech     0,08006 | RSI(2)  79,8        | 15m 0,326% setor A      | lat 637 ms
+20:10:00  20:10 BTCUSDT   fech   75.759,20 | RSI(2)  86,7        | 15m 0,224% setor A      | lat 637 ms
+20:10:00  20:10 SOLUSDT   fech       97,68 | RSI(2)  89,8        | 15m 0,421% setor A      | lat 638 ms
+20:10:00  20:10 LINKUSDT  fech      10,897 | RSI(2)  83,9        | 15m 0,341% setor A      | lat 913 ms
+20:10:01  20:10 XRPUSDT   fech      1,2872 | RSI(2)  71,5        | 15m 0,319% setor A      | lat 1348 ms
+20:10:03  20:10 BNBUSDT   fech      720,39 | RSI(2)  89,6        | 15m 0,242% setor A      | lat 3241 ms
+20:15:00  20:15 SOLUSDT   fech       97,73 | RSI(2)  92,8 ACIMA  | 15m 0,442% setor A      | lat 316 ms  >>> SINAL X: alvo W 98,22
+20:15:00  20:15 LTCUSDT   fech       51,07 | RSI(2)  92,9 ACIMA  | 15m 0,314% setor A      | lat 450 ms  >>> SINAL X: alvo W 51,33
+20:15:00  20:15 XRPUSDT   fech      1,2872 | RSI(2)  71,5        | 15m 0,319% setor A      | lat 520 ms
+20:15:00  20:15 LINKUSDT  fech      10,904 | RSI(2)  90,6 ACIMA  | 15m 0,423% setor A      | lat 520 ms  >>> SINAL X: alvo W 10,959
+20:15:00  20:15 DOGEUSDT  fech     0,08011 | RSI(2)  89,3        | 15m 0,351% setor A      | lat 649 ms
+20:15:00  20:15 BNBUSDT   fech      720,78 | RSI(2)  93,9 ACIMA  | 15m 0,280% setor A      | lat 649 ms  >>> SINAL X: alvo W 724,38
+20:15:00  20:15 BTCUSDT   fech   75.817,70 | RSI(2)  93,6 ACIMA  | 15m 0,278% setor A      | lat 724 ms  >>> SINAL X: alvo W 76.196,79
+20:15:00  20:15 ETHUSDT   fech    2.397,78 | RSI(2)  92,4 ACIMA  | 15m 0,383% setor A      | lat 823 ms  >>> SINAL X: alvo W 2.409,77
+20:20:00  20:20 BNBUSDT   fech      722,68 | RSI(2)  98,8 ACIMA  | 15m 0,268% setor A      | lat 254 ms  >>> SINAL X: alvo W 726,29
+20:20:00  20:20 ETHUSDT   fech    2.407,74 | RSI(2)  98,8 ACIMA  | 15m 0,423% setor A      | lat 459 ms  >>> SINAL X: alvo W 2.419,78
+20:20:00  20:20 LTCUSDT   fech       51,26 | RSI(2)  98,6 ACIMA  | 15m 0,372% setor A      | lat 547 ms  >>> SINAL X: alvo W 51,52
+20:20:00  20:20 LINKUSDT  fech      10,970 | RSI(2)  98,9 ACIMA  | 15m 0,605% setor A      | lat 630 ms  >>> SINAL X: alvo W 11,025
+20:20:00  20:20 SOLUSDT   fech       98,14 | RSI(2)  98,8 ACIMA  | 15m 0,450% setor A      | lat 634 ms  >>> SINAL X: alvo W 98,63
+20:20:00  20:20 DOGEUSDT  fech     0,08045 | RSI(2)  98,5 ACIMA  | 15m 0,424% setor A      | lat 635 ms  >>> SINAL X: alvo W 0,08085
+20:20:00  20:20 BTCUSDT   fech   76.013,70 | RSI(2)  98,6 ACIMA  | 15m 0,273% setor A      | lat 687 ms  >>> SINAL X: alvo W 76.393,77
+20:20:00  20:20 XRPUSDT   fech      1,2947 | RSI(2)  98,5 ACIMA  | 15m 0,583% setor A      | lat 699 ms  >>> SINAL X: alvo W 1,3012
+20:24:47  Encerrado. 88 fechamentos avaliados · 16 sinais · latência mediana 637 ms, p95 3184 ms, máx 3268 ms · CSV: evidencias/fechamentos_20260916_192444.csv · reconexões: 1

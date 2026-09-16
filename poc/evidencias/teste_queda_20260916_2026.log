@@ -1,0 +1,16 @@
+20:26:54  Virada testada: 20:30:00 · queda de 20:29:45 a 20:30:20
+20:26:57  Histórico carregado (300 velas 5m por par). Relógio Binance +145 ms vs. local.
+20:26:57  WebSocket conectado: 8 pares, streams 5m + 15m.
+20:29:45  QUEDA SIMULADA: leitura parada; conexão será derrubada às 20:30:20
+20:30:25  Conexão perdida (ConnectionError). Reconectando em 1s…
+20:30:28  20:30 ETHUSDT   fech    2.412,11 | RSI(2)  97,2 ACIMA  | 15m 0,692% setor A      | lat 28554 ms  (recuperada após queda)  >>> SINAL X: alvo W 2.424,17
+20:30:28  20:30 LINKUSDT  fech      11,003 | RSI(2)  99,5 ACIMA  | 15m 0,963% setor A      | lat 28837 ms  (recuperada após queda)  >>> SINAL X: alvo W 11,058
+20:30:28  20:30 XRPUSDT   fech      1,2975 | RSI(2)  99,3 ACIMA  | 15m 0,901% setor A      | lat 28886 ms  (recuperada após queda)  >>> SINAL X: alvo W 1,3040
+20:30:29  20:30 BTCUSDT   fech   76.044,00 | RSI(2)  83,9        | 15m 0,404% setor A      | lat 29126 ms  (recuperada após queda)
+20:30:29  20:30 LTCUSDT   fech       51,36 | RSI(2)  99,3 ACIMA  | 15m 0,646% setor A      | lat 29162 ms  (recuperada após queda)  >>> SINAL X: alvo W 51,62
+20:30:29  20:30 DOGEUSDT  fech     0,08067 | RSI(2)  99,4 ACIMA  | 15m 0,724% setor A      | lat 29190 ms  (recuperada após queda)  >>> SINAL X: alvo W 0,08107
+20:30:29  20:30 BNBUSDT   fech      724,34 | RSI(2)  99,5 ACIMA  | 15m 0,548% setor A      | lat 29198 ms  (recuperada após queda)  >>> SINAL X: alvo W 727,96
+20:30:29  20:30 SOLUSDT   fech       98,38 | RSI(2)  99,4 ACIMA  | 15m 0,757% setor A      | lat 29219 ms  (recuperada após queda)  >>> SINAL X: alvo W 98,87
+20:30:29  Histórico carregado (300 velas 5m por par). Relógio Binance +46 ms vs. local.
+20:30:29  WebSocket conectado: 8 pares, streams 5m + 15m.
+20:30:38  RESULTADO: 8/8 pares avaliados para a vela 20:30, recuperada=True, reconexões=1 -> PASSOU
