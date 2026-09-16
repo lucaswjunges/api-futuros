@@ -19,6 +19,7 @@ python -m unittest -v                           # todos os testes
 python -m unittest test_alerta_futuros.TestRSI.test_periodo_2_calculado_a_mao   # um teste
 python alerta_futuros.py --sem-popup --minutos 15   # execução ao vivo só console + CSV (logs/)
 python alerta_futuros.py --demo                 # pop-ups de exemplo, sem rede (útil p/ screenshots)
+python queda_simulada_ao_vivo.py                # E2E: derruba a conexão na virada da vela e confere a recuperação (2–7 min)
 
 cd proposta
 pdflatex -interaction=nonstopmode proposta-alerta-futuros.tex   # rodar 2x (LastPage/refs)
@@ -47,7 +48,7 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada v
 
 - **Streams de kline de Futuros só funcionam na rota `/market`**: `wss://fstream.binance.com/market/stream?streams=...`. Desde 23/04/2026 as URLs antigas (`/ws`, `/stream`) conectam, mas **não entregam velas** e não dão erro.
 - REST: `https://fapi.binance.com/fapi/v1/klines` (descartar a última vela se `closeTime` ainda estiver no futuro) e `/fapi/v1/time` para o offset de relógio.
-- Latência medida do fechamento ao alerta: mediana ≈ 1 s (0,4–1,6 s). A maior parte é a própria Binance publicando a vela fechada (campo `E` − fechamento: 0,1–1,4 s, mediana 0,77 s) + ~250 ms de rede até os servidores no Japão; o cálculo é < 1 ms.
+- Latência do fechamento ao alerta (execução de 60 min, 88 fechamentos): mediana 637 ms, p95 3,2 s — os lentos quase sempre no LTCUSDT (menos negociado). A maior parte é a Binance publicando a vela fechada (campo `E` − fechamento, gravado no CSV como `publicacao_binance_ms`) + ~250 ms de rede até o Japão; o cálculo é < 1 ms.
 
 ## Proposta (`proposta/`)
 
