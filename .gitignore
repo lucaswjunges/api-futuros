@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec
+
+# Logs de execução local da PoC (as evidências versionadas ficam em poc/evidencias/)
+poc/logs/
+
+# LaTeX (artefatos de compilação)
+proposta/*.aux
+proposta/*.log
+proposta/*.out
+proposta/*.toc
+proposta/*.synctex.gz
