@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## O que é este repositório
 
-Projeto de cliente da **Blumenau TI**: app de alertas de trading para Windows que lê **somente dados públicos** da Binance Futuros USDⓈ-M (sem conta, API key ou ordens) e mostra um pop-up quando a regra do cliente é verdadeira. A especificação original do cliente está em `APP-Futuros.docx` — é a fonte de verdade da regra de negócio.
+Projeto de cliente da **Blumenau TI** para **Roberto Urbano** (uso hobby, sem experiência técnica — textos voltados ao cliente em linguagem simples): app de alertas de trading para Windows que lê **somente dados públicos** da Binance Futuros USDⓈ-M (sem conta, API key ou ordens) e mostra um pop-up quando a regra do cliente é verdadeira. A especificação original do cliente está em `APP-Futuros.docx` — é a fonte de verdade da regra de negócio.
 
 - `poc/` — Prova de Conceito em Python (motor + pop-up), base da futura Versão 1.
 - `poc/evidencias/` — log e CSV de uma execução ao vivo; os números citados na proposta saem daqui.
@@ -50,6 +50,6 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada v
 
 ## Proposta (`proposta/`)
 
-- Valores comerciais e os resultados da PoC ficam em macros no topo do `.tex` (`\valPoc`, `\valA`, `\valB`, `\pocAval`, `\pocLatMed`…) — altere ali, não no corpo.
+- Valores comerciais e os resultados da PoC ficam em macros no topo do `.tex` (`\cliente`, `\valPoc`, `\valA`, `\valB`, `\pocAval`, `\pocLatMed`…) — altere ali, não no corpo.
 - `popups-poc.png` é captura real dos pop-ups (`--demo`), obtida com `xwd -id <wm_frame>` porque a sessão é Wayland.
 - Depois de editar, renderizar (`pdftoppm -r 70 -png`) e conferir visualmente: a proposta deve caber em 8 páginas (capa + 7).
