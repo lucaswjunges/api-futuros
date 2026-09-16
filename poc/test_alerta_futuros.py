@@ -1,10 +1,12 @@
 """Testes da lógica de sinais. Executar: python -m unittest -v"""
 
+import asyncio
 import unittest
 
 from alerta_futuros import (
     MS_5M,
     Ativo,
+    Monitor,
     Parametros,
     RSIWilder,
     Vela,
@@ -137,6 +139,31 @@ class TestAtivo(unittest.TestCase):
         self.assertEqual(ativo.classificar(5 * 60_000), "duplicada")
         self.assertEqual(ativo.classificar(5 * 60_000 + MS_5M), "nova")
         self.assertEqual(ativo.classificar(5 * 60_000 + 3 * MS_5M), "lacuna")
+
+
+class TestRecuperacaoAposQueda(unittest.TestCase):
+    def _monitor(self, lotes):
+        avaliadas = []
+        monitor = Monitor(P, avaliadas.append, pares={"BTCUSDT": 2})
+        monitor._baixar_velas = lambda _simbolo, _antes=None: lotes.pop(0)
+        return monitor, avaliadas
+
+    def test_velas_fechadas_durante_a_queda_sao_avaliadas(self):
+        historico = [_vela(m, 101, 99, 100) for m in range(0, 30, 5)]  # 10:00 … 10:25
+        durante_queda = [_vela(30, 110, 100, 110), _vela(35, 111, 109, 111)]
+        monitor, avaliadas = self._monitor([historico, historico + durante_queda])
+        asyncio.run(monitor._recuperar("BTCUSDT"))  # conexão inicial: só carrega
+        self.assertEqual(avaliadas, [])
+        asyncio.run(monitor._recuperar("BTCUSDT"))  # reconexão: avalia 10:30 e 10:35
+        self.assertEqual([a.abertura_ms for a in avaliadas], [30 * 60_000, 35 * 60_000])
+        self.assertTrue(all(a.recuperada for a in avaliadas))
+        self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 35 * 60_000)
+
+    def test_queda_maior_que_o_historico_nao_avalia_velas_antigas(self):
+        monitor, avaliadas = self._monitor([[_vela(0, 1, 1, 1)], [_vela(m, 1, 1, 1) for m in range(600, 700, 5)]])
+        asyncio.run(monitor._recuperar("BTCUSDT"))
+        asyncio.run(monitor._recuperar("BTCUSDT"))
+        self.assertEqual(avaliadas, [])
 
 
 if __name__ == "__main__":

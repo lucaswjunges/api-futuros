@@ -62,6 +62,7 @@ PARES = {
 
 MS_5M = 5 * 60 * 1000
 MS_15M = 15 * 60 * 1000
+ATRASO_MAX_POPUP_MS = MS_5M  # sinais recuperados com mais atraso vão só para o CSV
 
 log = logging.getLogger("alerta")
 
@@ -103,6 +104,8 @@ class Avaliacao:
     alvo_texto: str
     fechamento_texto: str
     latencia_ms: float | None = None
+    publicacao_binance_ms: float | None = None  # evento Binance (E) − fechamento da vela
+    recuperada: bool = False  # vela fechada durante queda de conexão, avaliada ao reconectar
 
 
 # ─────────────────────────────── Lógica pura (testável) ───────────────────────────────
@@ -295,13 +298,28 @@ class Monitor:
         # descarta a vela ainda aberta (closeTime no futuro)
         return [_vela_de_kline(k) for k in _get_json("/fapi/v1/klines", **params) if k[6] < agora]
 
-    async def _carregar(self, simbolo: str, antes_de_ms: int | None = None) -> None:
+    async def _recuperar(self, simbolo: str, antes_de_ms: int | None = None) -> None:
+        """Recarrega o histórico via REST. Se o par já vinha sendo monitorado, as velas que fecharam
+        durante a queda de conexão são AVALIADAS (e não apenas absorvidas no histórico)."""
+        ativo = self.ativos[simbolo]
+        ultima = ativo.ultima_abertura
         velas = await asyncio.to_thread(self._baixar_velas, simbolo, antes_de_ms)
-        self.ativos[simbolo].carregar_historico(velas)
+        if ultima is None or not velas or ultima < velas[0].abertura_ms:
+            if ultima is not None:
+                log.warning("%s: queda maior que o histórico disponível; velas antigas não serão avaliadas.", simbolo)
+            ativo.carregar_historico(velas)
+            return
+        ativo.carregar_historico([v for v in velas if v.abertura_ms <= ultima])
+        for v in velas:
+            if v.abertura_ms > ultima:
+                av = ativo.fechar_vela(v)
+                av.latencia_ms = self.agora_binance_ms() - (v.abertura_ms + MS_5M)
+                av.recuperada = True
+                self.ao_avaliar(av)
 
     async def _sincronizar(self) -> None:
         await asyncio.to_thread(self._sincronizar_relogio)
-        await asyncio.gather(*(self._carregar(s) for s in self.ativos))
+        await asyncio.gather(*(self._recuperar(s) for s in self.ativos))
         log.info("Histórico carregado (%d velas 5m por par). Relógio Binance %+.0f ms vs. local.",
                  self.p.velas_aquecimento, self.offset_ms)
 
@@ -343,9 +361,9 @@ class Monitor:
             k = dados.get("k")
             if not k or k["i"] != "5m" or not k["x"]:
                 continue
-            await self._vela_fechada(k, recebido_ms=self.agora_binance_ms())
+            await self._vela_fechada(k, dados.get("E"), recebido_ms=self.agora_binance_ms())
 
-    async def _vela_fechada(self, k: dict, recebido_ms: float) -> None:
+    async def _vela_fechada(self, k: dict, evento_ms: int | None, recebido_ms: float) -> None:
         simbolo = k["s"]
         ativo = self.ativos.get(simbolo)
         if ativo is None:
@@ -356,9 +374,12 @@ class Monitor:
             return
         if situacao == "lacuna":
             log.warning("%s: lacuna detectada, recompondo histórico via REST.", simbolo)
-            await self._carregar(simbolo, antes_de_ms=vela.abertura_ms)
+            await self._recuperar(simbolo, antes_de_ms=vela.abertura_ms)
         av = ativo.fechar_vela(vela)
-        av.latencia_ms = recebido_ms - (int(k["T"]) + 1)
+        fechou_ms = int(k["T"]) + 1
+        av.latencia_ms = recebido_ms - fechou_ms
+        if evento_ms is not None:
+            av.publicacao_binance_ms = evento_ms - fechou_ms
         self.ao_avaliar(av)
 
 
@@ -435,7 +456,8 @@ class Popups:
 
 class Registro:
     CAMPOS = ["fechamento_5m", "par", "preco_fechamento", "rsi2", "faixa", "max_15m", "min_15m",
-              "tamanho_15m_pct", "setor", "sinal", "preco_alvo", "latencia_ms"]
+              "tamanho_15m_pct", "setor", "sinal", "preco_alvo", "latencia_ms", "publicacao_binance_ms",
+              "recuperada"]
 
     def __init__(self, pasta: Path):
         pasta.mkdir(parents=True, exist_ok=True)
@@ -450,13 +472,14 @@ class Registro:
     def gravar(self, av: Avaliacao) -> None:
         self.avaliacoes += 1
         self.sinais += av.sinal is not None
-        if av.latencia_ms is not None:
+        if av.latencia_ms is not None and not av.recuperada:
             self.latencias.append(av.latencia_ms)
         fech = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000)
         self._csv.writerow([
             f"{fech:%Y-%m-%d %H:%M}", av.simbolo, av.fechamento, _fmt(av.rsi, 2), av.faixa or "",
             av.maxima_15m, av.minima_15m, _fmt(av.tamanho_15m_pct, 4), av.setor or "inválida",
-            av.sinal or "", av.alvo_texto, _fmt(av.latencia_ms, 0),
+            av.sinal or "", av.alvo_texto, _fmt(av.latencia_ms, 0), _fmt(av.publicacao_binance_ms, 0),
+            "sim" if av.recuperada else "",
         ])
         self._arq.flush()
 
@@ -464,6 +487,8 @@ class Registro:
         setor = f"setor {av.setor}" if av.setor else "15m inválida"
         linha = (f"{fech:%H:%M} {av.simbolo:<9} fech {av.fechamento_texto:>11} | {rsi} | "
                  f"15m {formatar_num(av.tamanho_15m_pct, 3)}% {setor:<12} | lat {_fmt(av.latencia_ms, 0)} ms")
+        if av.recuperada:
+            linha += "  (recuperada após queda)"
         if av.sinal:
             linha += f"  >>> SINAL {av.sinal}: alvo {'W' if av.sinal == 'X' else 'Z'} {av.alvo_texto}"
         log.info(linha)
@@ -532,7 +557,7 @@ def main() -> None:
 
     def ao_avaliar(av: Avaliacao) -> None:
         registro.gravar(av)
-        if av.sinal:
+        if av.sinal and (av.latencia_ms or 0) < ATRASO_MAX_POPUP_MS:
             fila_popups.put(av)
 
     monitor = Monitor(p, ao_avaliar)
