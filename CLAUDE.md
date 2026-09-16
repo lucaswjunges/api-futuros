@@ -46,7 +46,7 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada v
 
 - **Streams de kline de Futuros só funcionam na rota `/market`**: `wss://fstream.binance.com/market/stream?streams=...`. Desde 23/04/2026 as URLs antigas (`/ws`, `/stream`) conectam, mas **não entregam velas** e não dão erro.
 - REST: `https://fapi.binance.com/fapi/v1/klines` (descartar a última vela se `closeTime` ainda estiver no futuro) e `/fapi/v1/time` para o offset de relógio.
-- Latência medida do fechamento ao alerta ≈ 0,3–1,1 s: a maior parte é a própria Binance publicando a vela fechada (90–830 ms) + ~250 ms de rede; o cálculo é < 1 ms.
+- Latência medida do fechamento ao alerta: mediana ≈ 1 s (0,4–1,6 s). A maior parte é a própria Binance publicando a vela fechada (campo `E` − fechamento: 0,1–1,4 s, mediana 0,77 s) + ~250 ms de rede até os servidores no Japão; o cálculo é < 1 ms.
 
 ## Proposta (`proposta/`)
 
