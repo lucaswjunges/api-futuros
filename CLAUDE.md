@@ -52,6 +52,6 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada v
 
 ## Proposta (`proposta/`)
 
-- Valores comerciais e os resultados da PoC ficam em macros no topo do `.tex` (`\cliente`, `\valPoc`, `\valA`, `\valB`, `\pocAval`, `\pocLatMed`…) — altere ali, não no corpo.
+- Valores comerciais e os resultados da PoC ficam em macros no topo do `.tex` (`\cliente`, `\autor`, `\valPoc`, `\valA`, `\valB`, `\pocAval`, `\pocLatMed`…) — altere ali, não no corpo.
 - `popups-poc.png` é captura real dos pop-ups (`--demo`), obtida com `xwd -id <wm_frame>` porque a sessão é Wayland.
 - Depois de editar, renderizar (`pdftoppm -r 70 -png`) e conferir visualmente: a proposta deve caber em 8 páginas (capa + 7).
