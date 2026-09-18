@@ -279,6 +279,7 @@ class Monitor:
         self.ativos = {s: Ativo(s, c, p) for s, c in pares.items()}
         self.offset_ms = 0.0  # relógio Binance − relógio local
         self.parar = threading.Event()
+        self.conectado = threading.Event()  # exposto pra janela mostrar o status da conexão
         self.reconexoes = 0
 
     def _sincronizar_relogio(self) -> None:
@@ -336,9 +337,11 @@ class Monitor:
                     # então nenhuma vela se perde entre o REST e o WebSocket.
                     await self._sincronizar()
                     log.info("WebSocket conectado: %d pares, streams 5m + 15m.", len(self.ativos))
+                    self.conectado.set()
                     espera = 1
                     await self._ler(ws)
             except Exception as e:  # rede instável, Wi-Fi trocado, laptop hibernou, desconexão de 24h…
+                self.conectado.clear()
                 if self.parar.is_set():
                     break
                 self.reconexoes += 1

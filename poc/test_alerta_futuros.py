@@ -148,6 +148,11 @@ class TestRecuperacaoAposQueda(unittest.TestCase):
         monitor._baixar_velas = lambda _simbolo, _antes=None: lotes.pop(0)
         return monitor, avaliadas
 
+    def test_conectado_comeca_desligado(self):
+        # a janela (Opção B) usa esse Event pra mostrar o status da conexão no quadro de situação
+        monitor, _ = self._monitor([[]])
+        self.assertFalse(monitor.conectado.is_set())
+
     def test_velas_fechadas_durante_a_queda_sao_avaliadas(self):
         historico = [_vela(m, 101, 99, 100) for m in range(0, 30, 5)]  # 10:00 … 10:25
         durante_queda = [_vela(30, 110, 100, 110), _vela(35, 111, 109, 111)]
