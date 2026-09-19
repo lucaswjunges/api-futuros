@@ -27,13 +27,14 @@ pdflatex -interaction=nonstopmode proposta-alerta-futuros.tex   # rodar 2x (Last
 
 ## Arquitetura da PoC (`poc/alerta_futuros.py`)
 
-Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada vela 5m fechada → pop-up + CSV.
+Fluxo: REST aquece o estado → WebSocket entrega velas → RSI(2) atualiza a **cada** vela 5m fechada → captação (avaliação completa + pop-up + CSV) só nos fechamentos que também fecham uma vela de 15m (:00/:15/:30/:45).
 
-- **Lógica pura** (testada em `test_alerta_futuros.py`): `RSIWilder` (RSI incremental com suavização de Wilder/RMA, igual ao TradingView), `faixa_rsi` (Condição 1), `setor_vela15` (Condição 2), `cruzamento` (X/Y → alvo W/Z), `formatar_preco` (padrão BR, casas decimais por par em `PARES`).
-- **`Ativo`**: estado por par. A vela de 15m **não** vem do stream de 15m: é reconstruída agregando as velas 5m fechadas da mesma janela (`abertura // MS_15M`). Isso é idêntico à vela da Binance e evita corrida entre mensagens 5m/15m. `classificar()` detecta duplicatas e lacunas.
+- **Lógica pura** (testada em `test_alerta_futuros.py`): `RSIWilder` (RSI incremental com suavização de Wilder/RMA, igual ao TradingView), `faixa_rsi` (Condição 1), `setor_vela15` (Condição 2), `cruzamento` (X/Y → alvo W/Z), `formatar_preco` (padrão BR, casas decimais por par em `PARES`), `fecha_vela_15m(abertura_ms)` (item 4.5-b).
+- **`Ativo`**: estado por par. A vela de 15m **não** vem do stream de 15m: é reconstruída agregando as velas 5m fechadas da mesma janela (`abertura // MS_15M`). Isso é idêntico à vela da Binance e evita corrida entre mensagens 5m/15m. `classificar()` detecta duplicatas e lacunas. `Ativo.fechar_vela()` sempre atualiza o RSI(2) e a agregação da vela 15m, independentemente de captarmos aquele fechamento ou não.
 - **`Monitor`** (thread própria com `asyncio`): conecta o WebSocket **antes** de baixar o histórico REST (mensagens ficam na fila, nenhuma vela se perde); reconexão com backoff exponencial até 30 s; watchdog derruba a conexão após 30 s sem mensagens; lacuna → recarrega histórico via REST com `endTime`. Só processa klines `5m` com `x: true`.
-- **`Monitor._recuperar`** é o ponto único de carga REST (conexão inicial, reconexão e lacuna): se o par já tinha estado, as velas que fecharam durante a queda são **avaliadas** (`recuperada=True`), não só absorvidas no histórico — bug achado na execução ao vivo de 16/09/2026. Sinais recuperados com mais de 5 min de atraso (`ATRASO_MAX_POPUP_MS`) vão só para o CSV, sem pop-up.
-- **UI**: Tkinter na thread principal; o motor publica sinais numa `queue.Queue` consumida por `root.after`. `Popups` é uma janela própria (não toast nativo) porque o toast do Windows não permite cor do texto nem duração exata de 10 s.
+- **Captação a cada 15m (item 4.5-b, confirmado com o cliente em 19/09/2026)**: em `Monitor._recuperar` e `Monitor._vela_fechada`, todo fechamento de vela 5m chama `ativo.fechar_vela()` (RSI sempre atualizado), mas só chama `self.ao_avaliar(av)` (o que dispara CSV/pop-up/painel de status) quando `fecha_vela_15m(abertura_ms)` é verdadeiro. Antes disso, a captação era a cada 5m; o cliente pediu 15m porque uma vela de 15m "em formação" (ainda não fechada) dá resultado móvel/instável. `queda_simulada_ao_vivo.py` avança o alvo (`virada`) até um fechamento que também feche uma vela de 15m, senão o teste reportaria FALHOU mesmo com a recuperação certa.
+- **`Monitor._recuperar`** é o ponto único de carga REST (conexão inicial, reconexão e lacuna): se o par já tinha estado, as velas que fecharam durante a queda são **avaliadas** (`recuperada=True`, sujeitas à mesma regra dos 15m acima), não só absorvidas no histórico — bug achado na execução ao vivo de 16/09/2026. Sinais recuperados com mais de 5 min de atraso (`ATRASO_MAX_POPUP_MS`) vão só para o CSV, sem pop-up.
+- **UI**: Tkinter na thread principal; o motor publica sinais numa `queue.Queue` consumida por `root.after`. `Popups` é uma janela própria (não toast nativo) porque o toast do Windows não permite cor do texto nem duração exata de 10 s. Com a captação a cada 15m, o painel de status da janela agora atualiza cada linha a cada 15 min (não mais a cada 5).
 
 ## Regra de negócio e decisões já tomadas
 
@@ -41,7 +42,9 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → avaliação a cada v
 - Condição 2: vela 15m válida se `(máx − mín) / mín > 0,020%`; setor A = 30% superior, C = 30% inferior, B = meio.
 - X = ACIMA + A → W = fechamento × 1,005 (verde); Y = ABAIXO + C → Z = fechamento × 0,995 (vermelho).
 - Nos fechamentos de :00/:15/:30/:45 usa-se a vela 15m que termina junto com a 5m.
+- **Item 4.5-b (confirmado com o cliente em 19/09/2026)**: a captação (avaliação completa, CSV, pop-up) só acontece nos fechamentos de vela 5m que também fecham uma vela de 15m (:00/:15/:30/:45) — nas demais o RSI(2) é atualizado normalmente, mas não há avaliação/CSV/pop-up. Motivo dado pelo cliente: uma vela de 15m "em formação" (fechamento de 5m que não coincide com :00/:15/:30/:45) ainda não é definitiva, e usar esses fechamentos intermediários dava resultados mais instáveis. Implementado em `fecha_vela_15m()`.
 - Aquecimento de 300 velas 5m (o documento do cliente pede só 2, mas o RSI divergiria do gráfico).
+- Feature de IA/análise de notícias sugerida pelo cliente (grupo de 19/09/2026): tratada como fora do escopo da Opção B atual, para uma segunda entrega — não implementar aqui.
 - Itens pendentes de confirmação com o cliente estão na seção 4.5 da proposta.
 
 ## Pegadinhas da Binance

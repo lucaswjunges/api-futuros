@@ -5,6 +5,7 @@ import unittest
 
 from alerta_futuros import (
     MS_5M,
+    MS_15M,
     Ativo,
     Monitor,
     Parametros,
@@ -12,6 +13,7 @@ from alerta_futuros import (
     Vela,
     cruzamento,
     faixa_rsi,
+    fecha_vela_15m,
     formatar_preco,
     setor_vela15,
 )
@@ -141,6 +143,40 @@ class TestAtivo(unittest.TestCase):
         self.assertEqual(ativo.classificar(5 * 60_000 + 3 * MS_5M), "lacuna")
 
 
+def _kline(simbolo: str, minuto: int, o: float, h: float, l: float, c: float) -> dict:
+    """Kline de 5m no formato do WebSocket da Binance, só com os campos que Monitor._vela_fechada lê."""
+    abertura = minuto * 60_000
+    return {"s": simbolo, "t": abertura, "T": abertura + MS_5M - 1, "o": o, "h": h, "l": l, "c": c,
+            "i": "5m", "x": True}
+
+
+class TestCaptacao15m(unittest.TestCase):
+    """Item 4.5-b, confirmado com o cliente em 19/09/2026: só os fechamentos de 5m que também
+    fecham uma vela de 15m (:00/:15/:30/:45) são captados (CSV + pop-up) — os demais só alimentam
+    o RSI(2), porque a vela de 15m ainda estaria "em formação" nesses momentos."""
+
+    def test_fecha_vela_15m_marca_so_os_fechamentos_de_15_30_45_00(self):
+        self.assertFalse(fecha_vela_15m(0 * 60_000))   # fecha às :05
+        self.assertFalse(fecha_vela_15m(5 * 60_000))   # fecha às :10
+        self.assertTrue(fecha_vela_15m(10 * 60_000))   # fecha às :15
+        self.assertFalse(fecha_vela_15m(15 * 60_000))  # fecha às :20
+        self.assertTrue(fecha_vela_15m(25 * 60_000))   # fecha às :30
+        self.assertEqual(MS_15M, 3 * MS_5M)
+
+    def test_monitor_so_capta_avaliacoes_nos_fechamentos_de_15m(self):
+        avaliadas = []
+        monitor = Monitor(P, avaliadas.append, pares={"BTCUSDT": 2})
+        monitor.ativos["BTCUSDT"].carregar_historico([_vela(0, 101, 99, 100), _vela(5, 102, 100, 101)])
+
+        asyncio.run(monitor._vela_fechada(_kline("BTCUSDT", 10, 101, 110, 101, 110), None, 0))  # 10:15 — captado
+        asyncio.run(monitor._vela_fechada(_kline("BTCUSDT", 15, 110, 112, 109, 111), None, 0))  # 10:20 — só RSI
+        asyncio.run(monitor._vela_fechada(_kline("BTCUSDT", 20, 111, 113, 110, 112), None, 0))  # 10:25 — só RSI
+
+        self.assertEqual([a.abertura_ms for a in avaliadas], [10 * 60_000])
+        # o RSI(2)/histórico de velas avançou pelas 3 fechadas, não só pela captada
+        self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 20 * 60_000)
+
+
 class TestRecuperacaoAposQueda(unittest.TestCase):
     def _monitor(self, lotes):
         avaliadas = []
@@ -155,14 +191,17 @@ class TestRecuperacaoAposQueda(unittest.TestCase):
 
     def test_velas_fechadas_durante_a_queda_sao_avaliadas(self):
         historico = [_vela(m, 101, 99, 100) for m in range(0, 30, 5)]  # 10:00 … 10:25
-        durante_queda = [_vela(30, 110, 100, 110), _vela(35, 111, 109, 111)]
+        # 10:30 fecha às 10:35 (não é fechamento de 15m) · 10:35 fecha às 10:40 (idem)
+        # 10:40 fecha às 10:45 (é fechamento de 15m) — item 4.5-b: só esse é "captado"
+        durante_queda = [_vela(30, 110, 100, 110), _vela(35, 111, 109, 111), _vela(40, 112, 108, 112)]
         monitor, avaliadas = self._monitor([historico, historico + durante_queda])
         asyncio.run(monitor._recuperar("BTCUSDT"))  # conexão inicial: só carrega
         self.assertEqual(avaliadas, [])
-        asyncio.run(monitor._recuperar("BTCUSDT"))  # reconexão: avalia 10:30 e 10:35
-        self.assertEqual([a.abertura_ms for a in avaliadas], [30 * 60_000, 35 * 60_000])
+        asyncio.run(monitor._recuperar("BTCUSDT"))  # reconexão: RSI atualiza nas 3, mas só 10:40 é captada
+        self.assertEqual([a.abertura_ms for a in avaliadas], [40 * 60_000])
         self.assertTrue(all(a.recuperada for a in avaliadas))
-        self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 35 * 60_000)
+        # o RSI(2) e o histórico de velas avançaram pelas 3, mesmo as 2 não captadas
+        self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 40 * 60_000)
 
     def test_queda_maior_que_o_historico_nao_avalia_velas_antigas(self):
         monitor, avaliadas = self._monitor([[_vela(0, 1, 1, 1)], [_vela(m, 1, 1, 1) for m in range(600, 700, 5)]])

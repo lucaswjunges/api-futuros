@@ -7,9 +7,14 @@ Somente dados PÚBLICOS: sem conta, sem API key, sem senha e sem envio de ordens
 Fluxo:
   1. REST  (fapi.binance.com)         -> histórico de velas 5m p/ aquecer o RSI de Wilder
   2. WebSocket (fstream.binance.com/market) -> klines 5m e 15m em tempo real (8 pares, 1 conexão)
-  3. A cada vela de 5m FECHADA (k.x == true):
+  3. A cada vela de 5m FECHADA (k.x == true), o RSI(2) de Wilder é sempre atualizado (precisa de
+     todo fechamento de 5m pra ficar correto — pular um deixaria o valor divergente do gráfico).
+     A CAPTAÇÃO (avaliação completa + pop-up + registro) só acontece nos fechamentos que também
+     fecham uma vela de 15m (:00, :15, :30, :45 — confirmado com o cliente em 19/09/2026, item
+     4.5-b: avaliar em fechamentos de 5m que não coincidem com o fechamento de 15m usaria a vela
+     de 15m ainda "em formação", dando resultados mais móveis/menos confiáveis):
        Condição 1  RSI(2) >= 90 -> ACIMA   |  RSI(2) <= 5 -> ABAIXO
-       Condição 2  vela de 15m em andamento: tamanho = Máx - Mín (válida se > 0,020%)
+       Condição 2  vela de 15m (já fechada): tamanho = Máx - Mín (válida se > 0,020%)
                    Setor A = 30% superior  |  Setor C = 30% inferior  |  B = meio
        Cruzamento  X = ACIMA + A  -> alvo W = fechamento + 0,5%  (verde)
                    Y = ABAIXO + C -> alvo Z = fechamento - 0,5%  (vermelho)
@@ -150,6 +155,13 @@ class RSIWilder:
         else:
             self.valor = 100 - 100 / (1 + self._media_ganho / self._media_perda)
         return self.valor
+
+
+def fecha_vela_15m(abertura_ms: int) -> bool:
+    """True quando o fechamento da vela de 5m (abertura_ms + MS_5M) coincide com um fechamento
+    de 15m (:00, :15, :30, :45) — item 4.5-b confirmado com o cliente em 19/09/2026: só nesses
+    momentos a vela de 15m está de fato completa, então só neles a Condição 2 é confiável."""
+    return (abertura_ms + MS_5M) % MS_15M == 0
 
 
 def faixa_rsi(rsi: float | None, p: Parametros) -> str | None:
@@ -313,7 +325,9 @@ class Monitor:
         ativo.carregar_historico([v for v in velas if v.abertura_ms <= ultima])
         for v in velas:
             if v.abertura_ms > ultima:
-                av = ativo.fechar_vela(v)
+                av = ativo.fechar_vela(v)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
+                if not fecha_vela_15m(v.abertura_ms):
+                    continue  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
                 av.latencia_ms = self.agora_binance_ms() - (v.abertura_ms + MS_5M)
                 av.recuperada = True
                 self.ao_avaliar(av)
@@ -378,7 +392,9 @@ class Monitor:
         if situacao == "lacuna":
             log.warning("%s: lacuna detectada, recompondo histórico via REST.", simbolo)
             await self._recuperar(simbolo, antes_de_ms=vela.abertura_ms)
-        av = ativo.fechar_vela(vela)
+        av = ativo.fechar_vela(vela)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
+        if not fecha_vela_15m(vela.abertura_ms):
+            return  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
         fechou_ms = int(k["T"]) + 1
         av.latencia_ms = recebido_ms - fechou_ms
         if evento_ms is not None:
