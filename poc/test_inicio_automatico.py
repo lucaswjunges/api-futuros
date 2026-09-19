@@ -10,7 +10,12 @@ class TestComandoDeInicializacao(unittest.TestCase):
     def test_coloca_o_caminho_entre_aspas(self):
         # o caminho de instalação pode ter espaços (Program Files, nome do usuário…)
         caminho = Path(r"C:\Program Files\Alerta Futuros\AlertaFuturos.exe")
-        self.assertEqual(ia.comando_de_inicializacao(caminho), f'"{caminho}"')
+        self.assertEqual(ia.comando_de_inicializacao(caminho), f'"{caminho}" --minimizado')
+
+    def test_inclui_a_flag_minimizado_para_nao_abrir_a_janela_sozinho(self):
+        # quem ligou "iniciar com o Windows" não quer ver a janela de configuração
+        # aparecer sozinha no login — o app deve subir direto na bandeja.
+        self.assertIn("--minimizado", ia.comando_de_inicializacao(Path("C:/AlertaFuturos.exe")))
 
 
 @patch.object(ia, "_no_windows", return_value=False)

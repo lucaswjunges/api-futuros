@@ -14,11 +14,13 @@ Projeto de cliente da **Blumenau TI** para **Roberto Urbano** (uso hobby, sem ex
 
 ```bash
 cd poc
-pip install -r requirements.txt                 # única dependência: websockets
+pip install -r requirements.txt                 # websockets (motor) + pystray/Pillow (ícone de bandeja da janela)
 python -m unittest -v                           # todos os testes
 python -m unittest test_alerta_futuros.TestRSI.test_periodo_2_calculado_a_mao   # um teste
 python alerta_futuros.py --sem-popup --minutos 15   # execução ao vivo só console + CSV (logs/)
 python alerta_futuros.py --demo                 # pop-ups de exemplo, sem rede (útil p/ screenshots)
+python janela.py                                # janela de configuração (Opção B) — CSV em logs/, ícone na bandeja
+python janela.py --minimizado                   # mesma janela, já minimizada na bandeja (usado pelo início automático)
 python queda_simulada_ao_vivo.py                # E2E: derruba a conexão na virada da vela e confere a recuperação (2–7 min)
 
 cd proposta
@@ -35,6 +37,9 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → RSI(2) atualiza a **
 - **Captação a cada 15m (item 4.5-b, confirmado com o cliente em 19/09/2026)**: em `Monitor._recuperar` e `Monitor._vela_fechada`, todo fechamento de vela 5m chama `ativo.fechar_vela()` (RSI sempre atualizado), mas só chama `self.ao_avaliar(av)` (o que dispara CSV/pop-up/painel de status) quando `fecha_vela_15m(abertura_ms)` é verdadeiro. Antes disso, a captação era a cada 5m; o cliente pediu 15m porque uma vela de 15m "em formação" (ainda não fechada) dá resultado móvel/instável. `queda_simulada_ao_vivo.py` avança o alvo (`virada`) até um fechamento que também feche uma vela de 15m, senão o teste reportaria FALHOU mesmo com a recuperação certa.
 - **`Monitor._recuperar`** é o ponto único de carga REST (conexão inicial, reconexão e lacuna): se o par já tinha estado, as velas que fecharam durante a queda são **avaliadas** (`recuperada=True`, sujeitas à mesma regra dos 15m acima), não só absorvidas no histórico — bug achado na execução ao vivo de 16/09/2026. Sinais recuperados com mais de 5 min de atraso (`ATRASO_MAX_POPUP_MS`) vão só para o CSV, sem pop-up.
 - **UI**: Tkinter na thread principal; o motor publica sinais numa `queue.Queue` consumida por `root.after`. `Popups` é uma janela própria (não toast nativo) porque o toast do Windows não permite cor do texto nem duração exata de 10 s. Com a captação a cada 15m, o painel de status da janela agora atualiza cada linha a cada 15 min (não mais a cada 5).
+- **`poc/janela.py`**: CSV (`Registro`) é gravado igual ao CLI — cada "Iniciar" abre um arquivo novo em `poc/logs/`, "Parar"/fechar de vez fecha o arquivo (ver `construir_ao_avaliar()`, testado em `test_janela.py` sem precisar de `tk.Tk()` real). **Bug corrigido em 19/09/2026**: antes disso, `Monitor` recebia `self.fila.put` direto como `ao_avaliar`, sem nunca passar por um `Registro` — quem rodasse pela janela (o fluxo principal da Opção B) não gerava CSV nenhum, apesar da proposta prometer "Registro CSV de fechamentos e sinais". Achado numa auditoria de escopo, não por teste automático (é exatamente por isso que agora tem teste).
+- **`poc/bandeja.py`**: ícone de bandeja (`pystray` + `Pillow`), item da proposta "Roda em segundo plano, com ícone perto do relógio: Iniciar, Parar e Sair". Fechar a janela (X) minimiza pra bandeja em vez de encerrar; "Sair" só pelo menu da bandeja (ou Ctrl+C no console). Callbacks do menu rodam na thread do pystray — nunca tocam widget direto, só agendam via `root.after(0, ...)`, mesma regra do `Monitor`. Se o ambiente não suportar bandeja (`pystray.Icon` falha ao criar/rodar — ex.: Linux sem área de notificação, ou este sandbox de nuvem sem GTK), `Aplicativo._configurar_bandeja` cai no comportamento antigo (fechar = encerrar de vez) e loga um aviso — nunca finge que a bandeja está funcionando. Ícone hoje é um placeholder gerado em `bandeja.icone_padrao()`; trocar por uma logo oficial da Blumenau TI quando houver uma.
+- **`--minimizado`**: flag de `janela.py` que já sobe minimizado na bandeja; `inicio_automatico.comando_de_inicializacao()` sempre inclui essa flag no valor gravado no Registro do Windows, pra quem ligou "iniciar com o Windows" não ver a janela de configuração aparecer sozinha no login.
 
 ## Regra de negócio e decisões já tomadas
 

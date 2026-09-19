@@ -5,16 +5,28 @@ Janela de configuração — Opção B (Completa), Seção 5 da proposta.
 Fica só a parte de UI aqui: os campos usam campos_formulario.py (texto <->
 Parametros) e a configuração salva usa configuracao.py — nenhuma lógica de
 RSI/setor/cruzamento é duplicada, tudo isso continua só em alerta_futuros.py.
+A gravação em CSV usa o mesmo Registro do CLI (--sem-popup): cada "Iniciar"
+abre um arquivo novo em poc/logs/, "Parar" ou fechar de vez grava e fecha —
+sem isso o item "Registro CSV de fechamentos e sinais" da proposta ficaria
+descumprido quando o app roda pela janela (era o caso até 19/09/2026).
 
 Fluxo de threads (igual ao --sem-popup/--demo do CLI, já usado em produção):
   Monitor.executar() roda numa thread própria (asyncio); a única coisa que
   ela faz que toca a janela é colocar cada Avaliacao numa queue.Queue. Quem
   lê a fila e atualiza os widgets é sempre a thread principal, via
   root.after — Tkinter não é thread-safe, então nada de rede/asyncio pode
-  chamar métodos de widget diretamente.
+  chamar métodos de widget diretamente. A mesma regra vale para o ícone de
+  bandeja (bandeja.py): seus callbacks rodam na thread do pystray.
+
+Bandeja do sistema (ícone perto do relógio, Seção 5): ao fechar a janela
+(X), o app minimiza para a bandeja em vez de encerrar — "Sair" é só pelo
+menu da bandeja (ou Ctrl+C no console). Se a bandeja não estiver disponível
+no ambiente (sem suporte de tray, ex.: alguns Linux sem área de notificação),
+cai no comportamento antigo: fechar a janela encerra o app de vez.
 
 Uso:
-  python janela.py
+  python janela.py               # abre a janela
+  python janela.py --minimizado  # já sobe minimizado na bandeja (usado pelo início automático)
 """
 
 from __future__ import annotations
@@ -28,11 +40,25 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from alerta_futuros import ATRASO_MAX_POPUP_MS, MS_5M, PARES, Avaliacao, Monitor, Popups, formatar_num
+from alerta_futuros import ATRASO_MAX_POPUP_MS, MS_5M, PARES, Avaliacao, Monitor, Popups, Registro, formatar_num
 from campos_formulario import CAMPOS, ROTULOS, CampoInvalido, parametros_dos_textos, textos_de
 from configuracao import Configuracao, carregar, salvar, validar
 
 log = logging.getLogger("alerta.janela")
+
+PASTA_LOGS = Path(__file__).with_name("logs")
+
+
+def construir_ao_avaliar(registro: Registro, fila: "queue.Queue[Avaliacao]"):
+    """Callback passado ao Monitor: grava no CSV (igual ao CLI) e só depois publica na fila da
+    UI. Separado de Aplicativo.iniciar() de propósito — assim dá pra testar sem precisar de um
+    tk.Tk() real (ver test_janela.py)."""
+
+    def ao_avaliar(av: Avaliacao) -> None:
+        registro.gravar(av)
+        fila.put(av)
+
+    return ao_avaliar
 
 FUNDO = "#111827"
 FUNDO_CAMPO = "#1f2937"
@@ -62,10 +88,26 @@ class Aplicativo:
         self.linhas_status: dict[str, str] = {}
         self.entradas: dict[str, tk.Entry] = {}
         self.var_iniciar_windows = tk.BooleanVar(value=self.config.iniciar_com_windows)
+        self.registro: Registro | None = None
+        self.bandeja = None  # type: "bandeja.Bandeja | None"  # noqa: F821 (import tardio, ver _configurar_bandeja)
 
         self._montar(root)
         self.popups = Popups(root, self.config.parametros.popup_segundos)
-        root.protocol("WM_DELETE_WINDOW", self._ao_fechar)
+        self._configurar_bandeja(root)
+
+    def _configurar_bandeja(self, root: tk.Tk) -> None:
+        try:
+            from bandeja import Bandeja
+
+            self.bandeja = Bandeja(root, self)
+            self.bandeja.iniciar()
+            root.protocol("WM_DELETE_WINDOW", self._minimizar_para_bandeja)
+        except Exception as e:  # sem suporte de bandeja no ambiente — cai no fechar-de-vez antigo
+            log.warning("Ícone de bandeja não disponível (%s); fechar a janela agora encerra o app.", e)
+            root.protocol("WM_DELETE_WINDOW", self.encerrar_de_vez)
+
+    def _minimizar_para_bandeja(self) -> None:
+        self.root.withdraw()
 
     # ───────────────────────────── montagem da janela ─────────────────────────────
 
@@ -161,7 +203,8 @@ class Aplicativo:
             log.warning("Não foi possível salvar a configuração: %s", e)
         self._aplicar_inicio_automatico()
 
-        self.monitor = Monitor(parametros, self.fila.put)
+        self.registro = Registro(PASTA_LOGS)
+        self.monitor = Monitor(parametros, construir_ao_avaliar(self.registro, self.fila))
         self.thread_motor = threading.Thread(target=lambda: asyncio.run(self.monitor.executar()), daemon=True)
         self.thread_motor.start()
 
@@ -175,6 +218,9 @@ class Aplicativo:
     def parar(self) -> None:
         if self.monitor:
             self.monitor.parar.set()
+        if self.registro:
+            self.registro.fechar()
+            self.registro = None
         self.botao_parar.config(state="disabled")
         self.botao_iniciar.config(state="normal")
         for campo in self.entradas.values():
@@ -224,19 +270,35 @@ class Aplicativo:
         if av.simbolo in self.linhas_status:
             self.tabela.item(av.simbolo, values=(rsi_texto, setor_texto, av.fechamento_texto, hora))
 
-    def _ao_fechar(self) -> None:
+    def encerrar_de_vez(self) -> None:
+        """Sai de verdade: para o monitor, fecha o CSV, derruba o ícone de bandeja (se houver)
+        e destrói a janela. Chamado pelo "Sair" da bandeja, por Ctrl+C no console, ou ao fechar
+        a janela quando não há bandeja disponível neste ambiente."""
         if self.monitor:
             self.monitor.parar.set()
             if self.thread_motor:
                 self.thread_motor.join(timeout=2)
+        if self.registro:
+            self.registro.fechar()
+            self.registro = None
+        if self.bandeja:
+            self.bandeja.parar()
         self.root.destroy()
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
     root = tk.Tk()
-    Aplicativo(root)
-    root.mainloop()
+    app = Aplicativo(root)
+    if "--minimizado" in sys.argv[1:]:
+        root.withdraw()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        # mesmo tratamento do --sem-popup/--demo no CLI: Ctrl+C no console encerra o
+        # monitor de forma limpa (thread parada, CSV fechado) em vez de deixar o
+        # traceback do KeyboardInterrupt subir a partir do mainloop.
+        app.encerrar_de_vez()
 
 
 if __name__ == "__main__":

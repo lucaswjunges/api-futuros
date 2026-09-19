@@ -29,8 +29,10 @@ def _no_windows() -> bool:
 
 def comando_de_inicializacao(caminho_executavel: Path) -> str:
     """Valor gravado no Registro. Entre aspas: o caminho de instalação pode ter espaços
-    (ex.: 'C:\\Program Files\\...' ou o nome do usuário)."""
-    return f'"{caminho_executavel}"'
+    (ex.: 'C:\\Program Files\\...' ou o nome do usuário). ``--minimizado`` faz o app subir
+    direto na bandeja (ícone perto do relógio) em vez de abrir a janela — ninguém que ligou
+    "iniciar com o Windows" quer ver a janela de configuração aparecer sozinha no login."""
+    return f'"{caminho_executavel}" --minimizado'
 
 
 def definir(ativo: bool, caminho_executavel: Path) -> None:
