@@ -39,6 +39,7 @@ import threading
 import tkinter as tk
 import webbrowser
 from pathlib import Path
+from tkinter import font as tkfont
 from tkinter import ttk
 
 from alerta_futuros import ATRASO_MAX_POPUP_MS, MS_5M, PARES, Avaliacao, Monitor, Popups, Registro, formatar_num
@@ -80,6 +81,19 @@ TEXTO_FRACO = "#9ca3af"
 VERDE = "#22c55e"
 VERMELHO = "#ef4444"
 FONTE = ("Segoe UI", 10)
+
+
+def _resolver_fonte(root: tk.Tk) -> tuple[str, int]:
+    """'Segoe UI' só existe no Windows (a plataforma de destino do .exe) — num Linux sem essa
+    fonte instalada (achado em 20/09/2026, teste do Lucas no Ubuntu), o Tk cai num fallback que
+    renderiza os campos como blocos cinza ilegíveis em vez de dígitos, em vez de simplesmente usar
+    outra fonte legível. 'Helvetica' é um alias que o Tk sempre resolve pra alguma sans-serif
+    disponível em qualquer plataforma (inclusive Windows/Mac), então serve de rede de segurança
+    sem mudar nada de como o app aparece no Windows de verdade."""
+    familia, tamanho = FONTE
+    if familia in tkfont.families(root):
+        return FONTE
+    return ("Helvetica", tamanho)
 
 
 def caminho_do_executavel() -> Path:
@@ -146,6 +160,9 @@ class Aplicativo:
     # ───────────────────────────── montagem da janela ─────────────────────────────
 
     def _montar(self, root: tk.Tk) -> None:
+        global FONTE
+        FONTE = _resolver_fonte(root)
+
         root.title("Alerta Futuros — Configuração")
         root.configure(bg=FUNDO)
 
@@ -168,8 +185,11 @@ class Aplicativo:
             row=len(CAMPOS), column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
         if sys.platform != "win32":
+            # Nota: este label só aparece justamente na plataforma (não-Windows) onde 'Segoe UI'
+            # normalmente não existe — por isso usa FONTE (já resolvido por _resolver_fonte()
+            # acima) em vez de hardcodar a fonte de novo aqui.
             tk.Label(campos, text="(disponível só no Windows)", bg=FUNDO, fg=TEXTO_FRACO,
-                      font=("Segoe UI", 8)).grid(row=len(CAMPOS) + 1, column=0, columnspan=2, sticky="w")
+                      font=(FONTE[0], 8)).grid(row=len(CAMPOS) + 1, column=0, columnspan=2, sticky="w")
 
         self.rotulo_erro = tk.Label(root, text="", bg=FUNDO, fg=VERMELHO, font=FONTE, wraplength=360, justify="left")
         self.rotulo_erro.pack(fill="x", padx=16)
