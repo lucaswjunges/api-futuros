@@ -7,6 +7,7 @@ import queue
 import unittest
 from unittest.mock import MagicMock, call, patch
 
+import janela
 from alerta_futuros import Avaliacao
 from janela import URL_OUTRAS_VERSOES, abrir_outras_versoes, construir_ao_avaliar
 
@@ -65,3 +66,25 @@ class TestAbrirOutrasVersoes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBandejaHabilitada(unittest.TestCase):
+    """Bandeja só no Windows (20/09/2026): fora dele o laço GTK do pystray engole cliques do Tk —
+    medido com clique sintético no Ubuntu, 1/5 com bandeja contra 4/5 sem."""
+
+    def _com_ambiente(self, plataforma, variavel):
+        with patch.object(janela.sys, "platform", plataforma), \
+             patch.dict(janela.os.environ, {} if variavel is None else {"ALERTA_FUTUROS_BANDEJA": variavel},
+                             clear=False):
+            if variavel is None:
+                janela.os.environ.pop("ALERTA_FUTUROS_BANDEJA", None)
+            return janela._bandeja_habilitada()
+
+    def test_ligada_no_windows_desligada_fora(self):
+        self.assertTrue(self._com_ambiente("win32", None))
+        self.assertFalse(self._com_ambiente("linux", None))
+        self.assertFalse(self._com_ambiente("darwin", None))
+
+    def test_variavel_de_ambiente_tem_a_ultima_palavra(self):
+        self.assertTrue(self._com_ambiente("linux", "1"))
+        self.assertFalse(self._com_ambiente("win32", "0"))

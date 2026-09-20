@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import queue
 import sys
 import threading
@@ -49,6 +50,20 @@ from configuracao import Configuracao, carregar, salvar, validar
 log = logging.getLogger("alerta.janela")
 
 PASTA_LOGS = Path(__file__).with_name("logs")
+
+# O ícone de bandeja (pystray) sobe um laço GTK que, fora do Windows, compete com o laço de
+# eventos do Tk e faz os botões pararem de responder a cliques (relato do Lucas no Ubuntu 26 em
+# 20/09/2026, reproduzido com clique sintético via XTEST: 1/5 com bandeja, 4/5 sem). O Windows
+# é a plataforma de destino do .exe e usa o backend win32 do pystray, sem GTK no meio — lá a
+# bandeja continua ligada. ALERTA_FUTUROS_BANDEJA=1 força ligar (para testar), =0 força desligar.
+def _bandeja_habilitada() -> bool:
+    forcado = os.environ.get("ALERTA_FUTUROS_BANDEJA")
+    if forcado is not None:
+        return forcado.strip() not in ("", "0", "nao", "não", "false")
+    return sys.platform == "win32"
+
+
+BANDEJA_HABILITADA = _bandeja_habilitada()
 
 # Página de "outras versões" (Opção A, Opção B, versão com IA) — subdomínio publicado em
 # 20/09/2026 (Cloudflare Pages, projeto "alerta-futuros-versoes"). Conteúdo comercial (preços/
@@ -123,6 +138,14 @@ class Aplicativo:
         self._configurar_bandeja(root)
 
     def _configurar_bandeja(self, root: tk.Tk) -> None:
+        if not BANDEJA_HABILITADA:
+            log.info("Bandeja desligada nesta plataforma (%s): fechar a janela encerra o app. "
+                     "Motivo: o laço GTK do pystray engole cliques do Tk fora do Windows "
+                     "(medido em 20/09/2026 no Ubuntu: 1 de 5 cliques respondia com bandeja, "
+                     "4 de 5 sem ela). Force com ALERTA_FUTUROS_BANDEJA=1.", sys.platform)
+            self.bandeja = None
+            root.protocol("WM_DELETE_WINDOW", self.encerrar_de_vez)
+            return
         try:
             from bandeja import Bandeja
 
