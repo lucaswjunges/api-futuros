@@ -484,11 +484,23 @@ class Registro:
         self._arq = self.caminho.open("w", newline="", encoding="utf-8")
         self._csv = csv.writer(self._arq, delimiter=";")
         self._csv.writerow(self.CAMPOS)
+        self._arq.flush()  # cabeçalho no disco na hora: sessão sem nenhuma captação não deixa arquivo vazio
+        # gravar() roda na thread do motor e fechar() na thread da UI ("Parar"): sem o lock, uma vela
+        # que fecha no mesmo instante do clique gravava em arquivo já fechado (ValueError).
+        self._lock = threading.Lock()
+        self.fechado = False
         self.avaliacoes = 0
         self.sinais = 0
         self.latencias: list[float] = []
 
     def gravar(self, av: Avaliacao) -> None:
+        with self._lock:
+            if self.fechado:  # já paramos: a avaliação não entra no CSV, mas também não quebra o motor
+                log.debug("%s: avaliação após o encerramento do registro, ignorada.", av.simbolo)
+                return
+            self._gravar(av)
+
+    def _gravar(self, av: Avaliacao) -> None:
         self.avaliacoes += 1
         self.sinais += av.sinal is not None
         if av.latencia_ms is not None and not av.recuperada:
@@ -521,7 +533,10 @@ class Registro:
         return " · ".join(partes) + f" · CSV: {self.caminho}"
 
     def fechar(self) -> None:
-        self._arq.close()
+        with self._lock:
+            if not self.fechado:
+                self.fechado = True
+                self._arq.close()
 
 
 def _fmt(valor: float | None, casas: int) -> str:

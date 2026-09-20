@@ -1,14 +1,18 @@
 """Testes da lógica de sinais. Executar: python -m unittest -v"""
 
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 
 from alerta_futuros import (
     MS_5M,
     MS_15M,
     Ativo,
+    Avaliacao,
     Monitor,
     Parametros,
+    Registro,
     RSIWilder,
     Vela,
     cruzamento,
@@ -208,6 +212,33 @@ class TestRecuperacaoAposQueda(unittest.TestCase):
         asyncio.run(monitor._recuperar("BTCUSDT"))
         asyncio.run(monitor._recuperar("BTCUSDT"))
         self.assertEqual(avaliadas, [])
+
+
+class TestRegistro(unittest.TestCase):
+    """Corrida achada em 20/09/2026: o motor grava numa thread e a UI fecha o CSV noutra ("Parar")."""
+
+    def _avaliacao(self) -> Avaliacao:
+        return Avaliacao("BTCUSDT", 0, 1.0, 95.0, "ACIMA", 2.0, 1.0, 1.0, "A", "X", 1.005, "1,01", "1,00", 100)
+
+    def test_cabecalho_vai_pro_disco_na_criacao(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            registro = Registro(Path(pasta))
+            self.assertIn("fechamento_5m", registro.caminho.read_text(encoding="utf-8"))
+            registro.fechar()
+
+    def test_gravar_depois_de_fechar_nao_quebra_o_motor(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            registro = Registro(Path(pasta))
+            registro.gravar(self._avaliacao())
+            registro.fechar()
+            registro.gravar(self._avaliacao())  # antes do fix: ValueError na thread do motor
+            self.assertEqual(registro.caminho.read_text(encoding="utf-8").count("BTCUSDT"), 1)
+
+    def test_fechar_duas_vezes_e_inofensivo(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            registro = Registro(Path(pasta))
+            registro.fechar()
+            registro.fechar()
 
 
 if __name__ == "__main__":
