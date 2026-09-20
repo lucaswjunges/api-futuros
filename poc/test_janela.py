@@ -5,10 +5,10 @@ o ao_avaliar usado pela janela também grava no Registro, igual o CLI já fazia.
 
 import queue
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 from alerta_futuros import Avaliacao
-from janela import construir_ao_avaliar
+from janela import URL_OUTRAS_VERSOES, abrir_outras_versoes, construir_ao_avaliar
 
 
 def _avaliacao(simbolo: str = "BTCUSDT", abertura_ms: int = 0) -> Avaliacao:
@@ -44,6 +44,23 @@ class TestConstruirAoAvaliar(unittest.TestCase):
         registro.gravar.assert_has_calls([call(av1), call(av2)])
         self.assertEqual(registro.gravar.call_count, 2)
         self.assertEqual([fila.get_nowait(), fila.get_nowait()], [av1, av2])
+
+
+class TestAbrirOutrasVersoes(unittest.TestCase):
+    """Link/botão "Conhecer outras versões" (Opção A/B, versão com IA) — pedido do Hugo/Lucas em
+    19/09/2026 pra já ir acessível a partir da versão que vai pro cliente agora como MVP, mesmo
+    a página de destino ainda não existindo (ver o TODO em cima de URL_OUTRAS_VERSOES)."""
+
+    def test_abre_a_url_configurada_no_navegador(self):
+        with patch("janela.webbrowser.open") as abrir_mock:
+            abrir_outras_versoes()
+
+        abrir_mock.assert_called_once_with(URL_OUTRAS_VERSOES)
+
+    def test_url_configurada_e_https(self):
+        # não trava qual site é (pode mudar quando a página de verdade existir), só garante que
+        # nunca fica um link quebrado/vazio no material que já foi pro cliente.
+        self.assertTrue(URL_OUTRAS_VERSOES.startswith("https://"))
 
 
 if __name__ == "__main__":

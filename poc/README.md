@@ -36,3 +36,27 @@ latência) para conferência com o gráfico da Binance.
 
 Desde 23/04/2026 a Binance só entrega streams de kline na rota `/market`; as URLs antigas
 (`/ws`, `/stream`) conectam mas não enviam velas.
+
+## Empacotar o .exe (PyInstaller)
+
+Só precisa disso quem vai **gerar** o executável pra entregar ao cliente — quem só roda o
+app a partir do código-fonte (`python janela.py`) não precisa. Tem que rodar **no Windows**
+(um `.exe` gerado no Linux não roda lá — o sandbox de nuvem só faz um build de sanidade em
+Linux, pra pegar bug de empacotamento cedo, mas o `.exe` de verdade sai só daqui).
+
+```powershell
+pip install -r requirements-dev.txt
+pyinstaller --onefile --windowed --name AlertaFuturos --icon assets\icone_bandeja.ico --add-data "assets;assets" janela.py
+```
+
+O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
+
+- `--windowed` evita que um console preto abra atrás da janela.
+- `--icon` usa `assets/icone_bandeja.ico` (a logo da Blumenau TI) como ícone do `.exe` e da
+  barra de tarefas — sem isso o Windows mostra o ícone genérico do Python.
+- `--add-data "assets;assets"` (no Windows o separador é `;`, não `:`) embute a pasta
+  `assets/` dentro do `.exe`, senão `bandeja.carregar_icone()` não encontra a logo em tempo
+  de execução e cai no ícone de reserva (círculo escuro + linha verde).
+- Depois de gerado, teste o `.exe` (não só o script) pelo menos uma vez antes de entregar —
+  foi um build de teste como esse que pegou o bug do rodapé em 19/09/2026 (ver `CLAUDE.md`).
+- Ver `GUIA-INSTALACAO-CLIENTE.md` pro texto simples que acompanha o `.exe` na entrega.

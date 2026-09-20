@@ -37,6 +37,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import ttk
 
@@ -47,6 +48,18 @@ from configuracao import Configuracao, carregar, salvar, validar
 log = logging.getLogger("alerta.janela")
 
 PASTA_LOGS = Path(__file__).with_name("logs")
+
+# Página de "outras versões" (Opção A, Opção B, versão com IA) — subdomínio publicado em
+# 20/09/2026 (Cloudflare Pages, projeto "alerta-futuros-versoes"). Conteúdo comercial (preços/
+# escopo da Opção A e da versão com IA) ainda é rascunho — ver aviso na própria página.
+URL_OUTRAS_VERSOES = "https://futuros.blumenauti.com.br/"
+
+
+def abrir_outras_versoes() -> None:
+    """Callback do link/botão "Conhecer outras versões" — abre no navegador padrão do usuário.
+    Função separada (em vez de webbrowser.open direto no bind) só pra dar pra testar sem precisar
+    de um tk.Tk() real (ver test_janela.py)."""
+    webbrowser.open(URL_OUTRAS_VERSOES)
 
 
 def construir_ao_avaliar(registro: Registro, fila: "queue.Queue[Avaliacao]"):
@@ -102,9 +115,30 @@ class Aplicativo:
             self.bandeja = Bandeja(root, self)
             self.bandeja.iniciar()
             root.protocol("WM_DELETE_WINDOW", self._minimizar_para_bandeja)
+            # a criação do ícone pode dar certo e o .run() falhar logo depois, numa thread
+            # separada (achado em 19/09/2026) — confere em 300ms se a thread já não nasceu morta,
+            # senão a janela fica "configurada" pra minimizar sem nenhum ícone real pra reabrir.
+            root.after(300, self._verificar_bandeja_subiu)
         except Exception as e:  # sem suporte de bandeja no ambiente — cai no fechar-de-vez antigo
             log.warning("Ícone de bandeja não disponível (%s); fechar a janela agora encerra o app.", e)
+            self.bandeja = None
             root.protocol("WM_DELETE_WINDOW", self.encerrar_de_vez)
+
+    def _verificar_bandeja_subiu(self) -> None:
+        if self.bandeja is not None and not self.bandeja.thread_viva():
+            log.warning("A thread do ícone de bandeja morreu logo após iniciar; fechar a janela "
+                        "agora encerra o app, como se não houvesse bandeja.")
+            self._bandeja_falhou_em_tempo_de_execucao()
+
+    def _bandeja_falhou_em_tempo_de_execucao(self) -> None:
+        """Chamado por bandeja.py (ou por _verificar_bandeja_subiu) quando a thread do pystray
+        morre — na criação parecia ter dado certo, mas nenhum ícone real existe. Sem isso, fechar
+        a janela (X) minimizaria pra um ícone que não existe, deixando o usuário sem jeito de
+        reabrir o app a não ser matando o processo."""
+        self.bandeja = None
+        self.root.protocol("WM_DELETE_WINDOW", self.encerrar_de_vez)
+        self.root.deiconify()
+        self.root.lift()
 
     def _minimizar_para_bandeja(self) -> None:
         self.root.withdraw()
@@ -154,6 +188,18 @@ class Aplicativo:
         self.rotulo_conexao.pack(anchor="w", padx=16)
 
         self._montar_quadro_situacao(root)
+        self._montar_rodape(root)
+
+    def _montar_rodape(self, root: tk.Tk) -> None:
+        """Link pra página de "outras versões" (Opção A, Opção B, versão com IA) — pedido do
+        Hugo/Lucas em 19/09/2026 pra já ir acessível a partir da versão que vai pro cliente
+        agora como MVP, mesmo a página em si ainda não existindo (ver URL_OUTRAS_VERSOES)."""
+        rodape = tk.Frame(root, bg=FUNDO, padx=16)
+        rodape.pack(fill="x", pady=(0, 10))
+        link = tk.Label(rodape, text="Conhecer outras versões →", bg=FUNDO,
+                          fg=TEXTO_FRACO, font=(FONTE[0], 9, "underline"), cursor="hand2")
+        link.pack(anchor="e")
+        link.bind("<Button-1>", lambda _evt: abrir_outras_versoes())
 
     def _montar_quadro_situacao(self, root: tk.Tk) -> None:
         estilo = ttk.Style(root)

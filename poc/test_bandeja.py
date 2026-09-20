@@ -21,10 +21,30 @@ except Exception as _e:  # pystray às vezes falha já no import (ex.: Linux sem
 
 @unittest.skipUnless(Bandeja is not None, f"pystray não conseguiu escolher um backend neste ambiente: {_ERRO_IMPORT!r}")
 class TestExecutarAvisaFalhaDoRun(unittest.TestCase):
+    """Cada teste cria um pystray.Icon de verdade (só o .run() é mockado). No backend win32, o
+    construtor já registra uma window class no Windows com um nome baseado em id(self) — se não
+    desregistrarmos, um teste seguinte cujo objeto reaproveite o mesmo id() (comum quando o objeto
+    anterior já foi coletado pelo GC) esbarra em "[WinError 1410] Esta classe já existe". Achado em
+    19/09/2026 rodando no Windows real do Hugo; não acontece no backend xorg usado neste sandbox."""
+
+    def setUp(self):
+        self._bandejas = []
+
+    def tearDown(self):
+        for bandeja in self._bandejas:
+            icone = bandeja.icone
+            if hasattr(icone, "_unregister_class"):  # só existe no backend win32
+                icone._unregister_class(icone._atom)
+
+    def _nova_bandeja(self, root, app):
+        bandeja = Bandeja(root, app)
+        self._bandejas.append(bandeja)
+        return bandeja
+
     def test_avisa_o_app_quando_o_run_do_pystray_falha(self):
         root = MagicMock()
         app = MagicMock()
-        bandeja = Bandeja(root, app)
+        bandeja = self._nova_bandeja(root, app)
         bandeja.icone.run = MagicMock(side_effect=RuntimeError("sem backend de bandeja"))
 
         bandeja._executar()
@@ -36,7 +56,7 @@ class TestExecutarAvisaFalhaDoRun(unittest.TestCase):
         # sair de vez) — nesse caso não é falha, então não deve disparar o fallback.
         root = MagicMock()
         app = MagicMock()
-        bandeja = Bandeja(root, app)
+        bandeja = self._nova_bandeja(root, app)
         bandeja.icone.run = MagicMock(return_value=None)
 
         bandeja._executar()
@@ -46,7 +66,7 @@ class TestExecutarAvisaFalhaDoRun(unittest.TestCase):
     def test_thread_viva_reflete_o_estado_real_da_thread(self):
         root = MagicMock()
         app = MagicMock()
-        bandeja = Bandeja(root, app)
+        bandeja = self._nova_bandeja(root, app)
 
         self.assertFalse(bandeja.thread_viva())  # ainda não chamou iniciar()
 
