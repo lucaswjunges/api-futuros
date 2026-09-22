@@ -404,15 +404,19 @@ class Monitor:
 
 # ─────────────────────────────── Pop-up (Tkinter) ───────────────────────────────
 
-VERDE = "#22c55e"
-VERMELHO = "#ef4444"
+# Cores dos sinais (verde de vela da Binance pro W, vermelho pro Z) — fonte única em tema.py,
+# compartilhada com a janela de configuração.
+from tema import BORDA, PAINEL, TEXTO, TEXTO_FRACO, VERDE, VERMELHO, Tema, retangulo_arredondado  # noqa: E402
 
 
 class Popups:
-    """Janela estilo 'toast' no canto inferior direito: cor do preço + duração exata de 10 s,
-    o que a notificação nativa do Windows não permite controlar."""
+    """Janela própria estilo 'toast' no canto inferior direito — não o toast nativo do Windows,
+    que não deixa controlar a cor do texto nem a duração exata de 10 s. Desde 22/09/2026: cantos
+    arredondados (via -transparentcolor, só no Windows; fora dele fica um retângulo), barra que
+    esvazia ao longo dos 10 s pra mostrar quanto falta, e clique em qualquer ponto fecha."""
 
-    LARGURA, ALTURA, MARGEM, BARRA_TAREFAS = 330, 104, 10, 56
+    LARGURA, ALTURA, MARGEM, BARRA_TAREFAS, RAIO = 340, 122, 12, 56, 10  # px de projeto (96 dpi)
+    CHAVE_TRANSPARENCIA = "#010203"  # cor que o Windows torna transparente (os cantos)
 
     def __init__(self, root, segundos: int):
         import tkinter as tk
@@ -421,11 +425,14 @@ class Popups:
         self.root = root
         self.segundos = segundos
         self.abertos: list = []
+        self.tema = Tema(root)
 
     def mostrar(self, av: Avaliacao) -> None:
-        tk = self.tk
+        tk, px = self.tk, self.tema.px
         cor = VERDE if av.sinal == "X" else VERMELHO
         alvo = "W" if av.sinal == "X" else "Z"
+        largura, altura, margem = px(self.LARGURA), px(self.ALTURA), px(18)
+
         janela = tk.Toplevel(self.root)
         janela.overrideredirect(True)
         janela.attributes("-topmost", True)
@@ -433,25 +440,62 @@ class Popups:
             janela.attributes("-toolwindow", True)  # Windows: não aparece na barra de tarefas
         except tk.TclError:
             pass
-        janela.configure(bg=cor)
+        try:
+            janela.attributes("-transparentcolor", self.CHAVE_TRANSPARENCIA)  # Windows: cantos arredondados
+            fundo, arredondado = self.CHAVE_TRANSPARENCIA, True
+        except tk.TclError:
+            fundo, arredondado = PAINEL, False
 
-        corpo = tk.Frame(janela, bg="#111827")
-        corpo.place(x=5, y=0, relwidth=1, relheight=1, width=-5)
+        canvas = tk.Canvas(janela, width=largura, height=altura, bg=fundo, highlightthickness=0, bd=0)
+        canvas.pack()
+        if arredondado:
+            retangulo_arredondado(canvas, 1, 1, largura - 1, altura - 1, px(self.RAIO), fill=PAINEL, outline=BORDA)
+        else:
+            canvas.create_rectangle(0, 0, largura - 1, altura - 1, fill=PAINEL, outline=BORDA)
+
         hora = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
-        tk.Label(corpo, text=f"ALERTA FUTUROS  ·  fechamento 5m {hora}", fg="#9ca3af", bg="#111827",
-                 font=("Segoe UI", 8)).place(x=12, y=8)
-        tk.Label(corpo, text=av.simbolo, fg="#f9fafb", bg="#111827",
-                 font=("Segoe UI", 13, "bold")).place(x=12, y=28)
-        tk.Label(corpo, text=f"{alvo}  {av.alvo_texto}", fg=cor, bg="#111827",
-                 font=("Segoe UI", 20, "bold")).place(x=12, y=50)
-        detalhe = f"RSI(2) {formatar_num(av.rsi)} · Setor {av.setor} · Fech. {av.fechamento_texto}"
-        tk.Label(corpo, text=detalhe, fg="#9ca3af", bg="#111827", font=("Segoe UI", 8)).place(x=12, y=84)
+        canvas.create_text(margem, px(20), text="Alerta Futuros", anchor="w", fill=TEXTO_FRACO, font=self.tema.texto(8))
+        canvas.create_text(largura - margem, px(20), text=f"fechou às {hora}", anchor="e", fill=TEXTO_FRACO,
+                           font=self.tema.texto(8))
+        canvas.create_text(margem, px(42), text=av.simbolo, anchor="w", fill=TEXTO, font=self.tema.numeros(12, "bold"))
+        canvas.create_text(margem, px(70), text=f"{alvo} {av.alvo_texto}", anchor="w", fill=cor,
+                           font=self.tema.numeros(24, "bold"))
+        self._detalhes(canvas, margem, px(98), av)
 
-        for w in (janela, corpo, *corpo.winfo_children()):
+        y_barra = altura - px(10)
+        barra = canvas.create_line(margem, y_barra, largura - margem, y_barra, fill=cor, width=px(3), capstyle="round")
+        inicio = time.monotonic()
+
+        def esvaziar() -> None:
+            try:
+                restante = 1.0 - (time.monotonic() - inicio) / self.segundos
+                if restante <= 0:
+                    return
+                canvas.coords(barra, margem, y_barra, margem + (largura - 2 * margem) * restante, y_barra)
+                janela.after(100, esvaziar)
+            except tk.TclError:  # pop-up já fechado por clique
+                pass
+
+        for w in (janela, canvas):
             w.bind("<Button-1>", lambda _e, j=janela: self._fechar(j))
         self.abertos.append(janela)
         self._posicionar()
+        janela.after(100, esvaziar)
         janela.after(self.segundos * 1000, lambda: self._fechar(janela))
+
+    def _detalhes(self, canvas, x: float, y: float, av: Avaliacao) -> None:
+        """Linha de apoio: três pares rótulo/valor, cada valor logo depois do seu rótulo."""
+        px = self.tema.px
+        pares = (
+            ("RSI(2)", formatar_num(av.rsi) if av.rsi is not None else "—"),
+            ("setor", av.setor or "—"),
+            ("fechamento", av.fechamento_texto),
+        )
+        for rotulo, valor in pares:
+            item = canvas.create_text(x, y, text=rotulo, anchor="w", fill=TEXTO_FRACO, font=self.tema.texto(8))
+            x = canvas.bbox(item)[2] + px(4)
+            item = canvas.create_text(x, y, text=valor, anchor="w", fill=TEXTO, font=self.tema.numeros(9))
+            x = canvas.bbox(item)[2] + px(14)
 
     def _fechar(self, janela) -> None:
         if janela in self.abertos:
@@ -460,14 +504,16 @@ class Popups:
             self._posicionar()
 
     def _posicionar(self) -> None:
+        px = self.tema.px
+        largura, altura, margem, barra = px(self.LARGURA), px(self.ALTURA), px(self.MARGEM), px(self.BARRA_TAREFAS)
         largura_tela = self.root.winfo_screenwidth()
         altura_tela = self.root.winfo_screenheight()
-        por_coluna = max(1, (altura_tela - self.BARRA_TAREFAS) // (self.ALTURA + self.MARGEM))
+        por_coluna = max(1, (altura_tela - barra) // (altura + margem))
         for i, janela in enumerate(self.abertos):
             coluna, linha = divmod(i, por_coluna)
-            x = largura_tela - (self.LARGURA + self.MARGEM) * (coluna + 1)
-            y = altura_tela - self.BARRA_TAREFAS - (self.ALTURA + self.MARGEM) * (linha + 1)
-            janela.geometry(f"{self.LARGURA}x{self.ALTURA}+{x}+{y}")
+            x = largura_tela - (largura + margem) * (coluna + 1)
+            y = altura_tela - barra - (altura + margem) * (linha + 1)
+            janela.geometry(f"{largura}x{altura}+{x}+{y}")
 
 
 # ─────────────────────────────── Registro / console ───────────────────────────────
@@ -577,6 +623,9 @@ def main() -> None:
     if args.demo:
         import tkinter as tk
 
+        from tema import preparar_dpi
+
+        preparar_dpi()
         root = tk.Tk()
         root.withdraw()
         popups = Popups(root, p.popup_segundos)
@@ -610,6 +659,9 @@ def main() -> None:
         else:
             import tkinter as tk
 
+            from tema import preparar_dpi
+
+            preparar_dpi()
             root = tk.Tk()
             root.withdraw()
             popups = Popups(root, p.popup_segundos)

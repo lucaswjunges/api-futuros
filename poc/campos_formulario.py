@@ -27,7 +27,13 @@ ROTULOS = {
 
 
 class CampoInvalido(ValueError):
-    """Erro de um campo específico — a mensagem já vem pronta pra mostrar na janela."""
+    """Erro de um campo específico — a mensagem já vem pronta pra mostrar na janela. `campo` é a
+    chave em CAMPOS do campo que falhou (None quando o erro não é de um campo só), pra janela
+    poder destacar o campo em vermelho além de mostrar a mensagem."""
+
+    def __init__(self, mensagem: str, campo: str | None = None):
+        super().__init__(mensagem)
+        self.campo = campo
 
 
 def texto_do_parametro(valor: float) -> str:
@@ -46,7 +52,7 @@ def _numero(texto: str, campo: str) -> float:
     try:
         return float(bruto)
     except ValueError:
-        raise CampoInvalido(f"{ROTULOS[campo]}: “{texto}” não é um número válido.") from None
+        raise CampoInvalido(f"{ROTULOS[campo]}: “{texto}” não é um número válido.", campo) from None
 
 
 def parametros_dos_textos(textos: dict[str, str], base: Parametros) -> Parametros:
