@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alerta Futuros — Guia de Instalação</title>
+<style>
+  :root {
+    --navy: #1a1a2e;
+    --blue: #16213e;
+    --accent: #195F79;
+    --accent-hover: #0f495f;
+    --bg: #f4f6f8;
+    --card: #ffffff;
+    --text: #1f2937;
+    --text-weak: #6b7280;
+    --border: #e5e7eb;
+    --green: #22c55e;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  header {
+    background: linear-gradient(135deg, var(--navy), var(--blue));
+    color: #fff;
+    padding: 40px 20px 32px;
+    text-align: center;
+  }
+  header .logo {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    background: var(--navy);
+    border: 2px solid rgba(255,255,255,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 26px;
+    color: #fff;
+  }
+  header h1 { margin: 0 0 6px; font-size: 1.6rem; }
+  header p { margin: 0; color: rgba(255,255,255,0.75); font-size: 0.95rem; }
+
+  main { max-width: 720px; margin: -20px auto 60px; padding: 0 16px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 26px;
+    margin-bottom: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+
+  .step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .step + .step { margin-top: 22px; }
+  .step-num {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+  }
+  .step-body h2 {
+    margin: 2px 0 8px;
+    font-size: 1.1rem;
+    color: var(--navy);
+  }
+  .step-body p { margin: 0 0 8px; color: var(--text); }
+  .step-body p:last-child { margin-bottom: 0; }
+
+  .callout {
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 12px;
+    font-size: 0.92rem;
+  }
+  .callout.warn {
+    background: #fff8e6;
+    border: 1px solid #fbe4a8;
+    color: #7a5a06;
+  }
+  .callout.info {
+    background: #eef6fb;
+    border: 1px solid #cfe6f2;
+    color: #0f495f;
+  }
+
+  ol.substeps { margin: 10px 0 0; padding-left: 20px; }
+  ol.substeps li { margin-bottom: 6px; }
+
+  code, .kbd {
+    background: #eef1f4;
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.88em;
+    color: var(--navy);
+  }
+
+  .tray-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--navy);
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+    vertical-align: middle;
+    margin: 0 3px;
+  }
+
+  .menu-mock {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-radius: 8px;
+    padding: 10px 0;
+    margin-top: 12px;
+    font-size: 0.9rem;
+    max-width: 220px;
+  }
+  .menu-mock div {
+    padding: 6px 16px;
+  }
+  .menu-mock div:hover { background: rgba(255,255,255,0.06); }
+  .menu-mock .sep { border-top: 1px solid rgba(255,255,255,0.12); margin: 4px 0; padding: 0; }
+
+  .link-btn {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff !important;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .link-btn:hover { background: var(--accent-hover); }
+
+  footer {
+    text-align: center;
+    color: var(--text-weak);
+    font-size: 0.85rem;
+    padding: 10px 16px 40px;
+  }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 480px) {
+    header { padding: 32px 16px 26px; }
+    .card { padding: 18px 18px; }
+    .step { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">B</div>
+  <h1>Alerta Futuros</h1>
+  <p>Guia de instalação — Blumenau TI</p>
+</header>
+
+<main>
+
+  <div class="card">
+    <p style="margin:0; color:var(--text-weak); font-size:0.92rem;">
+      Este guia é para quem só vai <strong>usar</strong> o app — não precisa saber programar nem
+      mexer em nenhuma configuração técnica.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h2>Baixar o programa</h2>
+        <p>
+          Você vai receber um único arquivo: <code>AlertaFuturos.exe</code>.
+        </p>
+        <p>
+          Salve-o em qualquer pasta do seu computador (por exemplo, na Área de Trabalho ou em
+          "Documentos"). Não precisa instalar nada além disso — é um programa único, pronto pra usar.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h2>Abrir pela primeira vez</h2>
+        <p>Dê dois cliques em <code>AlertaFuturos.exe</code>.</p>
+        <div class="callout warn">
+          O Windows pode mostrar um aviso do tipo <strong>"O Windows protegeu o computador"</strong>
+          (SmartScreen). Isso acontece porque o programa não tem um certificado de assinatura digital
+          paga — <strong>não é sinal de vírus</strong>. Para continuar:
+          <ol class="substeps">
+            <li>Clique em <strong>"Mais informações"</strong></li>
+            <li>Clique em <strong>"Executar assim mesmo"</strong></li>
+          </ol>
+          Isso só aparece na primeira vez que você abre o programa nesse computador.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h2>A janela de configuração</h2>
+        <p>
+          Ao abrir, aparece a janela com os campos de configuração (RSI, tamanho dos setores etc.)
+          já preenchidos com os valores combinados. Normalmente você só precisa:
+        </p>
+        <ol class="substeps">
+          <li>Marcar a caixa <strong>"Iniciar com o Windows"</strong>, se quiser que o programa já
+            suba sozinho quando você ligar o computador (ele sobe minimizado, sem abrir a janela
+            sozinho)</li>
+          <li>Clicar em <strong>"Iniciar"</strong></li>
+        </ol>
+        <p>
+          A partir daí o programa fica rodando e mostra um pop-up no canto da tela sempre que a
+          regra combinada acontecer.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h2>Ícone perto do relógio (bandeja)</h2>
+        <p>
+          Ao fechar a janela (o X), o programa <strong>não</strong> encerra — ele continua rodando
+          escondido, com um ícone <span class="tray-icon">B</span> perto do relógio do Windows
+          (canto inferior direito da tela).
+        </p>
+        <div class="callout info">
+          Esse ícone às vezes fica escondido na "área de ícones ocultos": clique na setinha
+          <strong>"^"</strong> ao lado do relógio pra ver os ícones que não aparecem direto na
+          barra. Procure a logo da Blumenau TI (fundo azul-escuro com um "B" branco).
+        </div>
+        <p style="margin-top:14px;">
+          Clicando com o botão direito nesse ícone você tem estas opções:
+        </p>
+        <div class="menu-mock">
+          <div><strong>Abrir</strong></div>
+          <div>Iniciar Monitoramento</div>
+          <div>Parar Monitoramento</div>
+          <div class="sep"></div>
+          <div>Sair</div>
+        </div>
+        <p style="margin-top:10px; font-size:0.88rem; color:var(--text-weak);">
+          Só "Sair" encerra o programa de vez.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h2>Registro de sinais (CSV)</h2>
+        <p>
+          Toda vez que o programa avalia um fechamento, ele grava uma linha num arquivo de planilha
+          (CSV) numa pasta <code>logs</code>, ao lado do programa — pra você conferir depois no
+          Excel, se quiser.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h2>Conhecer outras versões</h2>
+        <p>
+          Dentro da janela de configuração, no rodapé, tem um link
+          <strong>"Conhecer outras versões"</strong>. Clicando nele, abre no seu navegador
+          a página com as outras opções disponíveis (Opção A, Opção B completa, e a versão com
+          análise por IA) — é a mesma página que a Blumenau TI vai te enviar separadamente com
+          todos os detalhes.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <p style="margin:0 0 4px; color:var(--navy); font-weight:600;">Dúvidas?</p>
+    <p style="margin:0; color:var(--text-weak); font-size:0.92rem;">
+      Fale com a Blumenau TI pelo mesmo canal do orçamento.
+    </p>
+  </div>
+
+</main>
+
+<footer>
+  Alerta Futuros — Blumenau TI
+</footer>
+
+</body>
+</html>

@@ -7,9 +7,14 @@ Somente dados PÚBLICOS: sem conta, sem API key, sem senha e sem envio de ordens
 Fluxo:
   1. REST  (fapi.binance.com)         -> histórico de velas 5m p/ aquecer o RSI de Wilder
   2. WebSocket (fstream.binance.com/market) -> klines 5m e 15m em tempo real (8 pares, 1 conexão)
-  3. A cada vela de 5m FECHADA (k.x == true):
+  3. A cada vela de 5m FECHADA (k.x == true), o RSI(2) de Wilder é sempre atualizado (precisa de
+     todo fechamento de 5m pra ficar correto — pular um deixaria o valor divergente do gráfico).
+     A CAPTAÇÃO (avaliação completa + pop-up + registro) só acontece nos fechamentos que também
+     fecham uma vela de 15m (:00, :15, :30, :45 — confirmado com o cliente em 19/09/2026, item
+     4.5-b: avaliar em fechamentos de 5m que não coincidem com o fechamento de 15m usaria a vela
+     de 15m ainda "em formação", dando resultados mais móveis/menos confiáveis):
        Condição 1  RSI(2) >= 90 -> ACIMA   |  RSI(2) <= 5 -> ABAIXO
-       Condição 2  vela de 15m em andamento: tamanho = Máx - Mín (válida se > 0,020%)
+       Condição 2  vela de 15m (já fechada): tamanho = Máx - Mín (válida se > 0,020%)
                    Setor A = 30% superior  |  Setor C = 30% inferior  |  B = meio
        Cruzamento  X = ACIMA + A  -> alvo W = fechamento + 0,5%  (verde)
                    Y = ABAIXO + C -> alvo Z = fechamento - 0,5%  (vermelho)
@@ -152,6 +157,13 @@ class RSIWilder:
         return self.valor
 
 
+def fecha_vela_15m(abertura_ms: int) -> bool:
+    """True quando o fechamento da vela de 5m (abertura_ms + MS_5M) coincide com um fechamento
+    de 15m (:00, :15, :30, :45) — item 4.5-b confirmado com o cliente em 19/09/2026: só nesses
+    momentos a vela de 15m está de fato completa, então só neles a Condição 2 é confiável."""
+    return (abertura_ms + MS_5M) % MS_15M == 0
+
+
 def faixa_rsi(rsi: float | None, p: Parametros) -> str | None:
     if rsi is None:
         return None
@@ -279,6 +291,7 @@ class Monitor:
         self.ativos = {s: Ativo(s, c, p) for s, c in pares.items()}
         self.offset_ms = 0.0  # relógio Binance − relógio local
         self.parar = threading.Event()
+        self.conectado = threading.Event()  # exposto pra janela mostrar o status da conexão
         self.reconexoes = 0
 
     def _sincronizar_relogio(self) -> None:
@@ -312,7 +325,9 @@ class Monitor:
         ativo.carregar_historico([v for v in velas if v.abertura_ms <= ultima])
         for v in velas:
             if v.abertura_ms > ultima:
-                av = ativo.fechar_vela(v)
+                av = ativo.fechar_vela(v)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
+                if not fecha_vela_15m(v.abertura_ms):
+                    continue  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
                 av.latencia_ms = self.agora_binance_ms() - (v.abertura_ms + MS_5M)
                 av.recuperada = True
                 self.ao_avaliar(av)
@@ -336,9 +351,11 @@ class Monitor:
                     # então nenhuma vela se perde entre o REST e o WebSocket.
                     await self._sincronizar()
                     log.info("WebSocket conectado: %d pares, streams 5m + 15m.", len(self.ativos))
+                    self.conectado.set()
                     espera = 1
                     await self._ler(ws)
             except Exception as e:  # rede instável, Wi-Fi trocado, laptop hibernou, desconexão de 24h…
+                self.conectado.clear()
                 if self.parar.is_set():
                     break
                 self.reconexoes += 1
@@ -375,7 +392,9 @@ class Monitor:
         if situacao == "lacuna":
             log.warning("%s: lacuna detectada, recompondo histórico via REST.", simbolo)
             await self._recuperar(simbolo, antes_de_ms=vela.abertura_ms)
-        av = ativo.fechar_vela(vela)
+        av = ativo.fechar_vela(vela)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
+        if not fecha_vela_15m(vela.abertura_ms):
+            return  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
         fechou_ms = int(k["T"]) + 1
         av.latencia_ms = recebido_ms - fechou_ms
         if evento_ms is not None:
@@ -385,15 +404,19 @@ class Monitor:
 
 # ─────────────────────────────── Pop-up (Tkinter) ───────────────────────────────
 
-VERDE = "#22c55e"
-VERMELHO = "#ef4444"
+# Cores dos sinais (verde de vela da Binance pro W, vermelho pro Z) — fonte única em tema.py,
+# compartilhada com a janela de configuração.
+from tema import BORDA, PAINEL, TEXTO, TEXTO_FRACO, VERDE, VERMELHO, Tema, retangulo_arredondado  # noqa: E402
 
 
 class Popups:
-    """Janela estilo 'toast' no canto inferior direito: cor do preço + duração exata de 10 s,
-    o que a notificação nativa do Windows não permite controlar."""
+    """Janela própria estilo 'toast' no canto inferior direito — não o toast nativo do Windows,
+    que não deixa controlar a cor do texto nem a duração exata de 10 s. Desde 22/09/2026: cantos
+    arredondados (via -transparentcolor, só no Windows; fora dele fica um retângulo), barra que
+    esvazia ao longo dos 10 s pra mostrar quanto falta, e clique em qualquer ponto fecha."""
 
-    LARGURA, ALTURA, MARGEM, BARRA_TAREFAS = 330, 104, 10, 56
+    LARGURA, ALTURA, MARGEM, BARRA_TAREFAS, RAIO = 340, 122, 12, 56, 10  # px de projeto (96 dpi)
+    CHAVE_TRANSPARENCIA = "#010203"  # cor que o Windows torna transparente (os cantos)
 
     def __init__(self, root, segundos: int):
         import tkinter as tk
@@ -402,11 +425,14 @@ class Popups:
         self.root = root
         self.segundos = segundos
         self.abertos: list = []
+        self.tema = Tema(root)
 
     def mostrar(self, av: Avaliacao) -> None:
-        tk = self.tk
+        tk, px = self.tk, self.tema.px
         cor = VERDE if av.sinal == "X" else VERMELHO
         alvo = "W" if av.sinal == "X" else "Z"
+        largura, altura, margem = px(self.LARGURA), px(self.ALTURA), px(18)
+
         janela = tk.Toplevel(self.root)
         janela.overrideredirect(True)
         janela.attributes("-topmost", True)
@@ -414,25 +440,62 @@ class Popups:
             janela.attributes("-toolwindow", True)  # Windows: não aparece na barra de tarefas
         except tk.TclError:
             pass
-        janela.configure(bg=cor)
+        try:
+            janela.attributes("-transparentcolor", self.CHAVE_TRANSPARENCIA)  # Windows: cantos arredondados
+            fundo, arredondado = self.CHAVE_TRANSPARENCIA, True
+        except tk.TclError:
+            fundo, arredondado = PAINEL, False
 
-        corpo = tk.Frame(janela, bg="#111827")
-        corpo.place(x=5, y=0, relwidth=1, relheight=1, width=-5)
+        canvas = tk.Canvas(janela, width=largura, height=altura, bg=fundo, highlightthickness=0, bd=0)
+        canvas.pack()
+        if arredondado:
+            retangulo_arredondado(canvas, 1, 1, largura - 1, altura - 1, px(self.RAIO), fill=PAINEL, outline=BORDA)
+        else:
+            canvas.create_rectangle(0, 0, largura - 1, altura - 1, fill=PAINEL, outline=BORDA)
+
         hora = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
-        tk.Label(corpo, text=f"ALERTA FUTUROS  ·  fechamento 5m {hora}", fg="#9ca3af", bg="#111827",
-                 font=("Segoe UI", 8)).place(x=12, y=8)
-        tk.Label(corpo, text=av.simbolo, fg="#f9fafb", bg="#111827",
-                 font=("Segoe UI", 13, "bold")).place(x=12, y=28)
-        tk.Label(corpo, text=f"{alvo}  {av.alvo_texto}", fg=cor, bg="#111827",
-                 font=("Segoe UI", 20, "bold")).place(x=12, y=50)
-        detalhe = f"RSI(2) {formatar_num(av.rsi)} · Setor {av.setor} · Fech. {av.fechamento_texto}"
-        tk.Label(corpo, text=detalhe, fg="#9ca3af", bg="#111827", font=("Segoe UI", 8)).place(x=12, y=84)
+        canvas.create_text(margem, px(20), text="Alerta Futuros", anchor="w", fill=TEXTO_FRACO, font=self.tema.texto(8))
+        canvas.create_text(largura - margem, px(20), text=f"fechou às {hora}", anchor="e", fill=TEXTO_FRACO,
+                           font=self.tema.texto(8))
+        canvas.create_text(margem, px(42), text=av.simbolo, anchor="w", fill=TEXTO, font=self.tema.numeros(12, "bold"))
+        canvas.create_text(margem, px(70), text=f"{alvo} {av.alvo_texto}", anchor="w", fill=cor,
+                           font=self.tema.numeros(24, "bold"))
+        self._detalhes(canvas, margem, px(98), av)
 
-        for w in (janela, corpo, *corpo.winfo_children()):
+        y_barra = altura - px(10)
+        barra = canvas.create_line(margem, y_barra, largura - margem, y_barra, fill=cor, width=px(3), capstyle="round")
+        inicio = time.monotonic()
+
+        def esvaziar() -> None:
+            try:
+                restante = 1.0 - (time.monotonic() - inicio) / self.segundos
+                if restante <= 0:
+                    return
+                canvas.coords(barra, margem, y_barra, margem + (largura - 2 * margem) * restante, y_barra)
+                janela.after(100, esvaziar)
+            except tk.TclError:  # pop-up já fechado por clique
+                pass
+
+        for w in (janela, canvas):
             w.bind("<Button-1>", lambda _e, j=janela: self._fechar(j))
         self.abertos.append(janela)
         self._posicionar()
+        janela.after(100, esvaziar)
         janela.after(self.segundos * 1000, lambda: self._fechar(janela))
+
+    def _detalhes(self, canvas, x: float, y: float, av: Avaliacao) -> None:
+        """Linha de apoio: três pares rótulo/valor, cada valor logo depois do seu rótulo."""
+        px = self.tema.px
+        pares = (
+            ("RSI(2)", formatar_num(av.rsi) if av.rsi is not None else "—"),
+            ("setor", av.setor or "—"),
+            ("fechamento", av.fechamento_texto),
+        )
+        for rotulo, valor in pares:
+            item = canvas.create_text(x, y, text=rotulo, anchor="w", fill=TEXTO_FRACO, font=self.tema.texto(8))
+            x = canvas.bbox(item)[2] + px(4)
+            item = canvas.create_text(x, y, text=valor, anchor="w", fill=TEXTO, font=self.tema.numeros(9))
+            x = canvas.bbox(item)[2] + px(14)
 
     def _fechar(self, janela) -> None:
         if janela in self.abertos:
@@ -441,14 +504,16 @@ class Popups:
             self._posicionar()
 
     def _posicionar(self) -> None:
+        px = self.tema.px
+        largura, altura, margem, barra = px(self.LARGURA), px(self.ALTURA), px(self.MARGEM), px(self.BARRA_TAREFAS)
         largura_tela = self.root.winfo_screenwidth()
         altura_tela = self.root.winfo_screenheight()
-        por_coluna = max(1, (altura_tela - self.BARRA_TAREFAS) // (self.ALTURA + self.MARGEM))
+        por_coluna = max(1, (altura_tela - barra) // (altura + margem))
         for i, janela in enumerate(self.abertos):
             coluna, linha = divmod(i, por_coluna)
-            x = largura_tela - (self.LARGURA + self.MARGEM) * (coluna + 1)
-            y = altura_tela - self.BARRA_TAREFAS - (self.ALTURA + self.MARGEM) * (linha + 1)
-            janela.geometry(f"{self.LARGURA}x{self.ALTURA}+{x}+{y}")
+            x = largura_tela - (largura + margem) * (coluna + 1)
+            y = altura_tela - barra - (altura + margem) * (linha + 1)
+            janela.geometry(f"{largura}x{altura}+{x}+{y}")
 
 
 # ─────────────────────────────── Registro / console ───────────────────────────────
@@ -465,11 +530,23 @@ class Registro:
         self._arq = self.caminho.open("w", newline="", encoding="utf-8")
         self._csv = csv.writer(self._arq, delimiter=";")
         self._csv.writerow(self.CAMPOS)
+        self._arq.flush()  # cabeçalho no disco na hora: sessão sem nenhuma captação não deixa arquivo vazio
+        # gravar() roda na thread do motor e fechar() na thread da UI ("Parar"): sem o lock, uma vela
+        # que fecha no mesmo instante do clique gravava em arquivo já fechado (ValueError).
+        self._lock = threading.Lock()
+        self.fechado = False
         self.avaliacoes = 0
         self.sinais = 0
         self.latencias: list[float] = []
 
     def gravar(self, av: Avaliacao) -> None:
+        with self._lock:
+            if self.fechado:  # já paramos: a avaliação não entra no CSV, mas também não quebra o motor
+                log.debug("%s: avaliação após o encerramento do registro, ignorada.", av.simbolo)
+                return
+            self._gravar(av)
+
+    def _gravar(self, av: Avaliacao) -> None:
         self.avaliacoes += 1
         self.sinais += av.sinal is not None
         if av.latencia_ms is not None and not av.recuperada:
@@ -502,7 +579,10 @@ class Registro:
         return " · ".join(partes) + f" · CSV: {self.caminho}"
 
     def fechar(self) -> None:
-        self._arq.close()
+        with self._lock:
+            if not self.fechado:
+                self.fechado = True
+                self._arq.close()
 
 
 def _fmt(valor: float | None, casas: int) -> str:
@@ -543,6 +623,9 @@ def main() -> None:
     if args.demo:
         import tkinter as tk
 
+        from tema import preparar_dpi
+
+        preparar_dpi()
         root = tk.Tk()
         root.withdraw()
         popups = Popups(root, p.popup_segundos)
@@ -576,6 +659,9 @@ def main() -> None:
         else:
             import tkinter as tk
 
+            from tema import preparar_dpi
+
+            preparar_dpi()
             root = tk.Tk()
             root.withdraw()
             popups = Popups(root, p.popup_segundos)

@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Só pra empacotar o .exe (PyInstaller) -- quem só roda "python janela.py" ou
+# "python alerta_futuros.py" a partir do código-fonte não precisa disso.
+pyinstaller>=6.22
