@@ -53,7 +53,7 @@ Toda vez que o programa avalia um fechamento, ele grava uma linha num arquivo de
 
 ## 6. Conhecer outras versões
 
-Dentro da janela de configuração, no rodapé, tem um link **"Conhecer outras versões (com IA)"**.
+Dentro da janela de configuração, no rodapé, tem um link **"Conhecer outras versões"**.
 Clicando nele, abre no seu navegador a página com as outras opções disponíveis (Opção A, Opção
 B completa, e a versão com análise por IA) — é a mesma página que a Blumenau TI vai te enviar
 separadamente com todos os detalhes.

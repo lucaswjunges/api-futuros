@@ -23,11 +23,24 @@ python alerta_futuros.py               # monitora os 8 pares com pop-ups
 python alerta_futuros.py --sem-popup   # só console + CSV
 python alerta_futuros.py --demo        # pop-ups de exemplo, sem internet
 python alerta_futuros.py --minutos 30  # encerra sozinho após 30 min
+python janela.py                       # janela de configuração (Opção B) + quadro de situação
 python -m unittest -v                  # testes da lógica
 ```
 
 Cada fechamento avaliado é gravado em `logs/fechamentos_*.csv` (RSI, setor, sinal, alvo,
 latência) para conferência com o gráfico da Binance.
+
+## Visual (janela e pop-ups)
+
+Cores, fontes e escala de DPI ficam em `tema.py`; as partes desenhadas (eixo de RSI por par,
+diagrama da vela de 15m, indicador de estado) em `componentes.py`. Paleta: azul-marinho e
+dourado da Blumenau TI (mesmos do ícone e da proposta), com o verde/vermelho de vela da própria
+Binance reservados aos sinais W/Z. Números em Bahnschrift e textos em Segoe UI — as duas só
+existem no Windows, então capturas feitas no Linux (como as de `evidencias/visual/`) saem com a
+fonte reserva e um pouco mais largas do que o cliente vai ver. Os cantos arredondados do pop-up
+também só aparecem no Windows (`-transparentcolor`).
+
+Capturas de antes/depois do redesenho de 22/09/2026: `evidencias/visual/`.
 
 ## Endpoints
 
