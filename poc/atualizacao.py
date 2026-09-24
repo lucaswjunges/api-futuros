@@ -168,6 +168,8 @@ def trocar_executavel(atual: Path, novo: Path, versao_atual: str = VERSAO) -> Pa
     pasta_antigas = atual.parent / PASTA_ANTERIORES
     pasta_antigas.mkdir(exist_ok=True)
     guardada = _nome_livre(pasta_antigas, f"AlertaFuturos-{versao_atual}")
+    if os.name != "nt":  # fora do Windows o arquivo baixado precisa do bit de execução
+        os.chmod(novo, 0o755)
     os.replace(atual, guardada)
     try:
         os.replace(novo, atual)
