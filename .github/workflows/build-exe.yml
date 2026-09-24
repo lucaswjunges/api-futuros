@@ -1,0 +1,67 @@
+# Gera o AlertaFuturos.exe num runner Windows do GitHub.
+#
+# Por que isto existe: o .exe do PyInstaller SÓ sai no Windows (um binário gerado no Linux não
+# roda lá), e quem desenvolve aqui está no Linux. Antes disso, cada entrega ao cliente dependia
+# de alguém abrir a máquina Windows e rodar os comandos à mão — foi o que travou a entrega de
+# 24/09/2026. Com este workflow o build sai do CI, sempre igual, e o artefato fica anexado à
+# execução para download.
+#
+# ATENÇÃO, e isto não muda: o .exe gerado aqui **ainda precisa ser aberto uma vez no Windows**
+# antes de ir para o cliente. Os testes automáticos não montam um tk.Tk() real, e já houve bug
+# (TclError no rodapé, 19/09/2026) que só apareceu rodando o executável de verdade.
+
+name: Empacotar .exe (Windows)
+
+on:
+  workflow_dispatch:      # botão manual: Actions > Empacotar .exe > Run workflow
+  push:
+    branches: ["main", "feature/**"]
+    paths:
+      - "poc/**"
+      - ".github/workflows/build-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        working-directory: poc
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Rodar os testes
+        working-directory: poc
+        run: python -m unittest -v
+
+      - name: Empacotar o executável
+        working-directory: poc
+        # Mesmos parâmetros documentados em poc/README.md. O separador do --add-data no Windows
+        # é ";" (no Linux seria ":"), e o --add-data embute a pasta assets/ dentro do .exe para
+        # bandeja.carregar_icone() achar a logo em tempo de execução.
+        run: >
+          pyinstaller --onefile --windowed
+          --name AlertaFuturos
+          --icon assets\icone_bandeja.ico
+          --add-data "assets;assets"
+          janela.py
+
+      - name: Conferir que o .exe saiu
+        working-directory: poc
+        run: |
+          if (-not (Test-Path dist\AlertaFuturos.exe)) { throw "dist\AlertaFuturos.exe nao foi gerado" }
+          Get-Item dist\AlertaFuturos.exe | Format-List Name, Length, LastWriteTime
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlertaFuturos-exe
+          path: poc/dist/AlertaFuturos.exe
+          if-no-files-found: error
+          retention-days: 90
