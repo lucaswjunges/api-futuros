@@ -79,6 +79,10 @@ anda, o programa está trabalhando, mesmo que o quadro não mude. (Se o moviment
 mesmo jeito que um real, pra você reconhecer quando vier. **"Como usar"**, no rodapé, abre esta
 explicação dentro do próprio programa.
 
+**Tela cheia:** clique no botão de maximizar da janela, em **"Tela cheia"** no rodapé ou aperte
+**F11** — tudo fica maior, ocupando a tela (bom pra um notebook dedicado ao app). Clique de novo
+(ou F11) pra voltar ao tamanho normal.
+
 ## 6. Conhecer outras versões
 
 Dentro da janela de configuração, no rodapé, tem um link **"Conhecer outras versões"**.

@@ -125,6 +125,18 @@ def mensagens_de_status(chave: str, n_pares: int, ultima: str | None, demorando:
             "Confira os valores (ou mantenha os combinados) e clique em Iniciar monitoramento.")
 
 
+def zoom_para(base: tuple[int, int], disponivel: tuple[int, int], maximo: float = 2.2) -> float:
+    """Quanto ampliar o conteúdo (base = tamanho natural, em px, com zoom 1) para ocupar a área
+    `disponivel` da janela maximizada sem cortar nada: a menor das duas proporções, com 4% de
+    folga pras bordas. Nunca menos que 1,0 (maximizar não encolhe) nem mais que `maximo`."""
+    bw, bh = base
+    dw, dh = disponivel
+    if bw <= 0 or bh <= 0 or dw <= 0 or dh <= 0:
+        return 1.0
+    z = min(dw / bw, dh / bh) * 0.96
+    return round(min(max(z, 1.0), maximo), 2)
+
+
 def executar_motor(monitor: Monitor, erros: "queue.Queue[str]") -> None:
     """Corpo da thread do motor. Uma exceção aqui antes só aparecia no console — sem console (o
     .exe é --windowed), a janela ficava com o botão "Parar" aceso e nada acontecendo. Agora a
@@ -150,6 +162,9 @@ Clique em "Ver exemplo de alerta". O exemplo é uma simulação: aparece no mesm
 
 Trocar ou acrescentar moedas
 No campo "Pares acompanhados", escreva os símbolos como aparecem na Binance (ex.: BTCUSDT), separados por espaço ou vírgula — até 16. Vale no próximo Iniciar. Se um símbolo não existir em Futuros, a janela avisa qual é.
+
+Tela cheia
+Maximize a janela, clique em "Tela cheia" no rodapé ou aperte F11: tudo fica maior e ocupa a tela. De novo (ou F11) volta ao normal.
 
 Posso fechar a janela?
 Sim. O X só esconde a janela: o app continua rodando, com o ícone perto do relógio (às vezes dentro da setinha ^). Clique com o botão direito nele para abrir de novo ou para Sair. Mantenha o computador ligado, sem suspensão e com internet.
@@ -253,8 +268,15 @@ class Aplicativo:
         self.aviso_bandeja_mostrado = False
         self.janela_ajuda: tk.Toplevel | None = None
         self._laco: str | None = None
+        # tela cheia: zoom atual, tamanho natural do conteúdo (medido com zoom 1) e a última
+        # avaliação de cada par (pra redesenhar o quadro quando a janela é refeita no novo zoom)
+        self.zoom = 1.0
+        self._tamanho_base: tuple[int, int] | None = None
+        self._ultimas: dict[str, Avaliacao] = {}
 
         self._montar(root)
+        self._medir_base()
+        root.bind("<F11>", lambda _e: self.alternar_tela_cheia())
         self.popups = Popups(root, self.config.parametros.popup_segundos)
         self._configurar_bandeja(root)
         # o laço roda sempre (não só com o motor vivo): é ele que percebe o motor morrer sozinho e
@@ -317,19 +339,27 @@ class Aplicativo:
 
     # ───────────────────────────── montagem da janela ─────────────────────────────
 
-    def _montar(self, root: tk.Tk) -> None:
+    def _montar(self, root: tk.Tk, reconstruindo: bool = False) -> None:
         self.tema = Tema(root)
+        self.tema.zoom = self.zoom
         px = self.tema.px
         root.title("Alerta Futuros")
         root.configure(bg=FUNDO)
-        root.resizable(False, False)
-        self._definir_icone(root)
+        # Redimensionável desde 24/09/2026: o cliente pediu a janela "até da tela toda". O que
+        # importa é o botão maximizar (ou F11 / "Tela cheia"): aí o conteúdo inteiro é refeito
+        # ampliado (ver _acompanhar_tamanho). Arrastar a borda só dá mais fundo em volta.
+        root.resizable(True, True)
+        if not reconstruindo:
+            self._definir_icone(root)
+        # tudo mora neste quadro, centralizado: é o que é destruído e refeito ao mudar o zoom
+        self.conteudo = tk.Frame(root, bg=FUNDO)
+        self.conteudo.pack(expand=True)
 
         # Duas colunas em tela larga (ver LARGURA_MIN_LADO_A_LADO): a regra fica à esquerda e o
         # quadro de situação à direita, em altura cheia. É o que dá lugar aos 16 pares sem a
         # janela virar uma coluna de mais de mil pixels.
         self.lado_a_lado = root.winfo_screenwidth() >= LARGURA_MIN_LADO_A_LADO
-        corpo = tk.Frame(root, bg=FUNDO)
+        corpo = tk.Frame(self.conteudo, bg=FUNDO)
         corpo.pack(fill="both", expand=True)
         if self.lado_a_lado:
             self.coluna_esquerda = tk.Frame(corpo, bg=FUNDO)
@@ -350,11 +380,12 @@ class Aplicativo:
         # altura sobra na tela, e isso só dá pra medir com todo o resto da janela já montado
         # (ver _montar_quadro_situacao). No empilhado ele entra no lugar certo com pack(before=),
         # e por isso precisa morar no MESMO pai do quadro — pack(before=) não atravessa pais.
-        self._montar_rodape(root if self.lado_a_lado else corpo)
+        self._montar_rodape(self.conteudo if self.lado_a_lado else corpo)
         if self.lado_a_lado:
             self._montar_status(self.coluna_direita)
         self._montar_quadro_situacao(root)
-        self._aquecer_casas_decimais()
+        if not reconstruindo:
+            self._aquecer_casas_decimais()
 
     def _definir_icone(self, root: tk.Tk) -> None:
         """Logo da Blumenau TI na barra de título e na barra de tarefas (sem isso o Tk mostra a
@@ -555,7 +586,8 @@ class Aplicativo:
             resto = self.rodape.winfo_reqheight() + self.caixa_status.winfo_reqheight() + px(34)
         else:
             resto = root.winfo_reqheight()
-        altura_max = altura_maxima_do_quadro(root.winfo_screenheight(), resto)
+        # ampliada (tela cheia), o zoom já foi calculado pra caber tudo: sem teto nem rolagem
+        altura_max = None if self.zoom > 1.0 else altura_maxima_do_quadro(root.winfo_screenheight(), resto)
         p = self.config.parametros
         self.painel = PainelPares(self.coluna_direita, self.tema, self.config.pares,
                                   p.rsi_abaixo, p.rsi_acima, altura_max)
@@ -591,7 +623,8 @@ class Aplicativo:
         for texto, acao in (("Sair", self.encerrar_de_vez),
                             ("Conhecer outras versões", abrir_outras_versoes),
                             ("Abrir registros", self.abrir_registros),
-                            ("Como usar", self.mostrar_ajuda)):
+                            ("Como usar", self.mostrar_ajuda),
+                            ("Tela cheia", self.alternar_tela_cheia)):
             link = tk.Label(rodape, text=texto, bg=FUNDO, fg=TEXTO_FRACO,
                             font=tema.texto(9, "underline"), cursor="hand2")
             link.pack(side="right", padx=(px(14), 0))
@@ -755,6 +788,7 @@ class Aplicativo:
         self.inicio_sessao = time.monotonic()
         self.avaliacoes = self.sinais = 0
         self.ultima_avaliacao = None
+        self._ultimas = {}
         self.thread_motor.start()
 
         self._habilitar_campos(False)
@@ -824,6 +858,7 @@ class Aplicativo:
 
     def _verificar_fila(self) -> None:
         try:
+            self._acompanhar_tamanho()
             self._processar()
         except tk.TclError:  # janela sendo destruída no meio do laço
             return
@@ -837,6 +872,7 @@ class Aplicativo:
             if not self.sessao_ativa:
                 continue  # chegou depois do Parar: não mostra aviso de uma sessão já encerrada
             self.painel.atualizar(av)
+            self._ultimas[av.simbolo] = av
             self.avaliacoes += 1
             self.sinais += av.sinal is not None
             try:
@@ -857,6 +893,84 @@ class Aplicativo:
         chave, texto = estado_do_monitor(True, True, self.monitor.conectado.is_set(), self.monitor.reconexoes)
         self.indicador.definir(chave, texto)
         self._atualizar_status(chave)
+
+    # ───────────────────────────── tela cheia ─────────────────────────────
+
+    def _medir_base(self) -> None:
+        self.root.update_idletasks()
+        self._tamanho_base = (self.conteudo.winfo_reqwidth(), self.conteudo.winfo_reqheight())
+
+    def _esta_maximizada(self) -> bool:
+        try:
+            if self.root.state() == "zoomed":  # Windows (e macOS)
+                return True
+        except tk.TclError:
+            pass
+        for atributo in ("-zoomed", "-fullscreen"):  # X11 não tem o estado "zoomed"
+            try:
+                if int(self.root.attributes(atributo)):
+                    return True
+            except (tk.TclError, ValueError):
+                pass
+        return False
+
+    def alternar_tela_cheia(self) -> None:
+        """Link "Tela cheia" e tecla F11: maximiza (ou volta ao normal). O zoom em si é aplicado
+        por _acompanhar_tamanho, que também pega o botão maximizar da própria janela."""
+        maximizar = not self._esta_maximizada()
+        try:
+            self.root.state("zoomed" if maximizar else "normal")
+        except tk.TclError:
+            try:
+                self.root.attributes("-zoomed", maximizar)
+            except tk.TclError:
+                self.root.attributes("-fullscreen", maximizar)
+
+    def _acompanhar_tamanho(self) -> None:
+        maximizada = self._esta_maximizada()
+        if maximizada and self.zoom == 1.0 and self._tamanho_base:
+            self.root.update_idletasks()
+            disponivel = (self.root.winfo_width(), self.root.winfo_height())
+            z = zoom_para(self._tamanho_base, disponivel)
+            if z >= 1.08:  # ganho pequeno demais não compensa refazer a janela
+                self.aplicar_zoom(z)
+        elif not maximizada and self.zoom != 1.0:
+            self.aplicar_zoom(1.0)
+
+    def aplicar_zoom(self, zoom: float) -> None:
+        """Refaz a janela inteira no novo zoom, preservando o que o usuário vê e digitou: campos
+        (mesmo a meio de uma edição), lista de pares, mensagens, estado da sessão e a última
+        avaliação de cada par. O motor, a fila e o CSV não são tocados — só a parte visual."""
+        textos = {campo: entrada.get() for campo, entrada in self.entradas.items()}
+        pares = self.entrada_pares.get("1.0", "end-1c")
+        rotulos = {nome: (getattr(self, nome).cget("text"), getattr(self, nome).cget("fg"))
+                   for nome in ("rotulo_erro", "rotulo_status", "rotulo_orientacao", "rotulo_proxima",
+                                "rotulo_resumo", "rotulo_rodape")}
+        indicador = (self.indicador.chave, self.indicador.rotulo.cget("text"))
+
+        self.barra_espera.parado()
+        self.conteudo.destroy()
+        self.entradas = {}
+        self.zoom = zoom
+        self._montar(self.root, reconstruindo=True)
+
+        for campo, texto in textos.items():
+            self.entradas[campo].delete(0, "end")
+            self.entradas[campo].insert(0, texto)
+        self.entrada_pares.delete("1.0", "end")
+        self.entrada_pares.insert("1.0", pares)
+        for nome, (texto, cor) in rotulos.items():
+            getattr(self, nome).config(text=texto, fg=cor)
+        self.indicador.definir(*indicador)
+        self.diagrama.atualizar(self._parametros_desenho.setor_pct)
+        self.painel.definir_faixas(self._parametros_desenho.rsi_abaixo, self._parametros_desenho.rsi_acima)
+        for av in self._ultimas.values():
+            self.painel.atualizar(av)
+        if self.sessao_ativa:
+            self._habilitar_campos(False)
+            self._recolher_regra(True)
+            self._estilizar_botoes(rodando=True)
+            self._atualizar_barra(indicador[0])
 
     def _atualizar_status(self, chave: str) -> None:
         demorando = time.monotonic() - self.inicio_sessao > SEGUNDOS_CONEXAO_DEMORADA

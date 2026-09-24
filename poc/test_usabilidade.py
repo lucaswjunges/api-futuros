@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import janela
 from componentes import contagem_regressiva, fracao_do_intervalo
-from janela import Aplicativo, executar_motor, mensagens_de_status
+from janela import Aplicativo, executar_motor, mensagens_de_status, zoom_para
 from test_janela import _avaliacao
 
 
@@ -61,6 +61,20 @@ class TestTempoAteAvaliacao(unittest.TestCase):
         agora = datetime(2026, 9, 24, 10, 14, 1)
         self.assertEqual(contagem_regressiva(agora, datetime(2026, 9, 24, 10, 15)), "00:59")
         self.assertEqual(contagem_regressiva(agora, datetime(2026, 9, 24, 10, 0)), "00:00")
+
+
+class TestZoomTelaCheia(unittest.TestCase):
+    """Pedido do cliente (23/09/2026): usar a tela toda num notebook dedicado ao app."""
+
+    def test_amplia_ate_caber_na_menor_proporcao(self):
+        self.assertEqual(zoom_para((1196, 667), (1920, 1040)), 1.5)
+
+    def test_nunca_encolhe_nem_passa_do_maximo(self):
+        self.assertEqual(zoom_para((1196, 667), (1000, 600)), 1.0)
+        self.assertEqual(zoom_para((500, 300), (3840, 2160)), 2.2)
+
+    def test_tamanhos_invalidos_ficam_em_1(self):
+        self.assertEqual(zoom_para((0, 0), (1920, 1080)), 1.0)
 
 
 class TestPastaDoHistorico(unittest.TestCase):
@@ -202,6 +216,27 @@ class TestJanelaReal(unittest.TestCase):
         self.assertTrue(self.app.fila.empty())
         self.app.registro.gravar.assert_not_called()
         self.assertEqual((self.app.avaliacoes, self.app.sinais), (0, 0))
+
+    def test_zoom_preserva_o_que_estava_na_tela(self):
+        self.sessao(conectado=True)
+        self.app.fila.put(_avaliacao())
+        self.app._processar()
+        self.app.entradas["rsi_acima"].config(state="normal")
+        self.app.entradas["rsi_acima"].delete(0, "end")
+        self.app.entradas["rsi_acima"].insert(0, "88")
+        self.app._habilitar_campos(False)
+        largura = self.app.conteudo.winfo_reqwidth()
+        self.app.aplicar_zoom(1.5)
+        self.root.update_idletasks()
+        self.assertGreater(self.app.conteudo.winfo_reqwidth(), largura * 1.3)
+        self.assertEqual(self.app.entradas["rsi_acima"].get(), "88")
+        self.assertEqual(self.app.entradas["rsi_acima"].cget("state"), "disabled")  # sessão rodando
+        self.assertEqual(self.app.botao_iniciar.cget("state"), "disabled")
+        itens = self.app.painel._linhas["BTCUSDT"]
+        self.assertIn("W", self.app.painel.corpo.itemcget(itens["sinal"], "text"))  # quadro redesenhado
+        self.app.aplicar_zoom(1.0)
+        self.root.update_idletasks()
+        self.assertEqual(self.app.conteudo.winfo_reqwidth(), largura)
 
     def test_como_usar_abre_uma_vez_so(self):
         self.app.mostrar_ajuda()

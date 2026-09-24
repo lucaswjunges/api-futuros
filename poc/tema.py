@@ -102,16 +102,23 @@ class Tema:
         self.familia_texto = primeira_familia_disponivel(FAMILIAS_TEXTO, familias)
         self.familia_numeros = primeira_familia_disponivel(FAMILIAS_NUMEROS, familias)
         self.escala = escala_de(root.winfo_fpixels("1i"))
+        # Ampliação da janela maximizada (pedido do cliente em 23/09/2026: "usar a tela toda", num
+        # notebook dedicado ao app). 1,0 = tamanho normal; a janela aumenta tudo junto — medidas
+        # e fontes — em vez de só esticar o fundo e deixar o conteúdo pequeno num canto.
+        self.zoom = 1.0
 
     def px(self, n: float) -> int:
-        """Medida em 'pixels de projeto' (96 dpi) -> pixels reais desta tela."""
-        return int(round(n * self.escala))
+        """Medida em 'pixels de projeto' (96 dpi) -> pixels reais desta tela (já com o zoom)."""
+        return int(round(n * self.escala * self.zoom))
+
+    def _tamanho(self, tamanho: int) -> int:
+        return max(1, int(round(tamanho * self.zoom)))
 
     def texto(self, tamanho: int = 10, peso: str = "normal") -> tuple[str, int, str]:
-        return (self.familia_texto, tamanho, peso)
+        return (self.familia_texto, self._tamanho(tamanho), peso)
 
     def numeros(self, tamanho: int = 11, peso: str = "normal") -> tuple[str, int, str]:
-        return (self.familia_numeros, tamanho, peso)
+        return (self.familia_numeros, self._tamanho(tamanho), peso)
 
 
 def escala_de(pixels_por_polegada: float) -> float:
