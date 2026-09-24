@@ -34,6 +34,21 @@ preenchidos com os valores combinados. Normalmente você só precisa:
 A partir daí o programa fica rodando e mostra um pop-up no canto da tela sempre que a regra
 combinada acontecer.
 
+## 3.1. Trocar os pares acompanhados (até 16)
+
+No campo **"Pares acompanhados"** você escolhe quais moedas o programa vigia — **até 16**.
+Escreva o símbolo do jeito que ele aparece na Binance (quase sempre termina em `USDT`, por
+exemplo `BTCUSDT`), separando por espaço ou vírgula. Pode colar a lista inteira de uma vez.
+
+Depois de mexer nessa lista, clique em **"Iniciar"**: é nesse momento que a mudança passa a
+valer e o quadro de baixo se refaz com as moedas novas. A lista fica salva, então da próxima
+vez que você abrir o programa ela já vem do jeito que você deixou — **não é preciso pedir um
+programa novo pra trocar de moeda**.
+
+Se você digitar um símbolo que a Binance não tem (um erro de digitação, ou uma moeda que saiu
+de linha), o programa avisa na hora, com o nome do símbolo, em vez de ficar com uma linha
+parada no quadro sem explicação.
+
 ## 4. Ícone perto do relógio (bandeja)
 
 Ao fechar a janela (o X), o programa **não** encerra — ele continua rodando escondido, com um

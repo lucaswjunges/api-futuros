@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from alerta_futuros import Parametros
-from configuracao import Configuracao, carregar, salvar, validar
+from alerta_futuros import LIMITE_PARES, PARES, Parametros
+from configuracao import Configuracao, carregar, salvar, validar, validar_pares
 
 
 class TestSalvarCarregar(unittest.TestCase):
@@ -51,6 +51,64 @@ class TestSalvarCarregar(unittest.TestCase):
             salvar(Configuracao(), caminho)
             restantes = list(Path(tmp).iterdir())
             self.assertEqual(restantes, [caminho])
+
+
+class TestParesNaConfiguracao(unittest.TestCase):
+    """A lista de pares passou a ser salva em 23/09/2026, quando o teto subiu de 8 para 16."""
+
+    def test_ida_e_volta_preserva_a_lista_e_a_ordem(self):
+        pares = ["ETHUSDT", "BTCUSDT", "ADAUSDT"]
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            salvar(Configuracao(pares=pares), caminho)
+            self.assertEqual(carregar(caminho).pares, pares)
+
+    def test_config_antigo_sem_a_chave_volta_com_os_8_originais(self):
+        """Quem já usava o app tem um config.json anterior a esta versão: abrir tem que continuar
+        funcionando, com exatamente os pares que ele já via."""
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            caminho.write_text(json.dumps({"parametros": {"rsi_acima": 92.0}}), encoding="utf-8")
+            self.assertEqual(carregar(caminho).pares, list(PARES))
+
+    def test_lista_estragada_no_arquivo_nao_derruba_o_app(self):
+        for valor in ("BTCUSDT", [], [123, None], ["nao vale"], ["BTCUSDT"] * (LIMITE_PARES + 1)):
+            with TemporaryDirectory() as tmp:
+                caminho = Path(tmp) / "config.json"
+                caminho.write_text(json.dumps({"pares": valor}), encoding="utf-8")
+                self.assertEqual(carregar(caminho).pares, list(PARES), valor)
+
+    def test_maiusculas_e_espacos_sao_normalizados_na_leitura(self):
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            caminho.write_text(json.dumps({"pares": [" btcusdt ", "EthUsdt"]}), encoding="utf-8")
+            self.assertEqual(carregar(caminho).pares, ["BTCUSDT", "ETHUSDT"])
+
+
+class TestValidarPares(unittest.TestCase):
+    def test_os_8_originais_sao_validos(self):
+        self.assertEqual(validar_pares(list(PARES)), [])
+
+    def test_no_teto_de_16_ainda_e_valido(self):
+        self.assertEqual(validar_pares([f"AA{i:02d}USDT" for i in range(LIMITE_PARES)]), [])
+
+    def test_acima_do_teto_diz_quantos_tirar(self):
+        erros = validar_pares([f"AA{i:02d}USDT" for i in range(LIMITE_PARES + 3)])
+        self.assertTrue(erros)
+        self.assertIn("Tire 3", erros[0])
+
+    def test_lista_vazia_e_invalida(self):
+        self.assertTrue(validar_pares([]))
+
+    def test_repetido_e_apontado_uma_vez_so(self):
+        erros = validar_pares(["BTCUSDT", "BTCUSDT", "BTCUSDT", "ETHUSDT"])
+        self.assertEqual(len(erros), 1)
+        self.assertIn("BTCUSDT", erros[0])
+
+    def test_simbolo_com_pontuacao_e_recusado(self):
+        erros = validar_pares(["BTC/USDT"])
+        self.assertTrue(erros)
+        self.assertIn("BTC/USDT", erros[0])
 
 
 class TestValidar(unittest.TestCase):

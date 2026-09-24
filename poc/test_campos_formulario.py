@@ -1,7 +1,9 @@
 import unittest
 
 from alerta_futuros import Parametros
-from campos_formulario import CampoInvalido, parametros_dos_textos, texto_do_parametro, textos_de
+from campos_formulario import (
+    CampoInvalido, pares_do_texto, parametros_dos_textos, texto_do_parametro, texto_dos_pares, textos_de,
+)
 
 PADRAO = Parametros()
 
@@ -59,6 +61,33 @@ class TestParametrosDosTextos(unittest.TestCase):
         del textos["ajuste_pct"]
         with self.assertRaises(CampoInvalido):
             parametros_dos_textos(textos, PADRAO)
+
+
+class TestParesDoTexto(unittest.TestCase):
+    """Campo "Pares acompanhados" da janela (teto de 16, 23/09/2026). O cliente cola a lista do
+    jeito que tiver em mãos, então o campo tem que aceitar qualquer pontuação razoável."""
+
+    def test_separadores_aceitos(self):
+        esperado = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+        self.assertEqual(pares_do_texto("BTCUSDT ETHUSDT SOLUSDT"), esperado)
+        self.assertEqual(pares_do_texto("BTCUSDT, ETHUSDT, SOLUSDT"), esperado)
+        self.assertEqual(pares_do_texto("BTCUSDT;ETHUSDT/SOLUSDT"), esperado)
+        self.assertEqual(pares_do_texto("BTCUSDT\nETHUSDT\n\nSOLUSDT\n"), esperado)
+
+    def test_normaliza_para_maiusculas(self):
+        self.assertEqual(pares_do_texto("btcusdt ethUsdt"), ["BTCUSDT", "ETHUSDT"])
+
+    def test_campo_vazio_ou_so_pontuacao_vira_lista_vazia(self):
+        # lista vazia é o que faz validar_pares avisar "escolha pelo menos um par"
+        self.assertEqual(pares_do_texto("   \n  "), [])
+        self.assertEqual(pares_do_texto(" , ; "), [])
+
+    def test_mantem_repetidos_para_quem_valida_poder_avisar(self):
+        self.assertEqual(pares_do_texto("BTCUSDT BTCUSDT"), ["BTCUSDT", "BTCUSDT"])
+
+    def test_ida_e_volta_pelo_texto_do_campo(self):
+        pares = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+        self.assertEqual(pares_do_texto(texto_dos_pares(pares)), pares)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, call, patch
 
 import janela
 from alerta_futuros import Avaliacao
-from janela import URL_OUTRAS_VERSOES, abrir_outras_versoes, construir_ao_avaliar
+from janela import (
+    LARGURA_MIN_LADO_A_LADO, URL_OUTRAS_VERSOES, abrir_outras_versoes, altura_maxima_do_quadro,
+    construir_ao_avaliar,
+)
 
 
 def _avaliacao(simbolo: str = "BTCUSDT", abertura_ms: int = 0) -> Avaliacao:
@@ -62,6 +65,25 @@ class TestAbrirOutrasVersoes(unittest.TestCase):
         # não trava qual site é (pode mudar quando a página de verdade existir), só garante que
         # nunca fica um link quebrado/vazio no material que já foi pro cliente.
         self.assertTrue(URL_OUTRAS_VERSOES.startswith("https://"))
+
+
+class TestAlturaMaximaDoQuadro(unittest.TestCase):
+    """Teto de altura do quadro de situação (16 pares, 23/09/2026). O que não pode acontecer é a
+    janela passar da tela e levar os botões Iniciar/Parar para fora do alcance do cliente."""
+
+    def test_sobra_de_tela_vira_espaco_do_quadro(self):
+        # 1080 px de tela, 90% = 972; com 550 px de resto sobram 422 para o quadro
+        self.assertEqual(altura_maxima_do_quadro(1080, 550), 422)
+
+    def test_notebook_baixo_aperta_o_quadro(self):
+        self.assertEqual(altura_maxima_do_quadro(768, 545), 146)
+
+    def test_nunca_devolve_menos_que_o_minimo(self):
+        self.assertEqual(altura_maxima_do_quadro(768, 900), 120)
+        self.assertEqual(altura_maxima_do_quadro(600, 700, minimo=80), 80)
+
+    def test_tela_larga_de_notebook_comum_usa_duas_colunas(self):
+        self.assertGreaterEqual(1366, LARGURA_MIN_LADO_A_LADO)
 
 
 if __name__ == "__main__":

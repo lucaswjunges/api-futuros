@@ -19,7 +19,7 @@ Requer Python 3.10+.
 
 ```bash
 pip install -r requirements.txt
-python alerta_futuros.py               # monitora os 8 pares com pop-ups
+python alerta_futuros.py               # monitora os 8 pares padrão com pop-ups (a lista editável é a da janela)
 python alerta_futuros.py --sem-popup   # só console + CSV
 python alerta_futuros.py --demo        # pop-ups de exemplo, sem internet
 python alerta_futuros.py --minutos 30  # encerra sozinho após 30 min
@@ -29,6 +29,23 @@ python -m unittest -v                  # testes da lógica
 
 Cada fechamento avaliado é gravado em `logs/fechamentos_*.csv` (RSI, setor, sinal, alvo,
 latência) para conferência com o gráfico da Binance.
+
+## Pares acompanhados (até 16)
+
+O teto é **16 pares** (`LIMITE_PARES`), pedido do cliente em 23/09/2026 — antes eram 8 fixos no
+código. A lista fica no campo **"Pares acompanhados"** da janela, é salva no `config.json` e
+vale a partir do próximo "Iniciar". Não precisa gerar `.exe` novo pra trocar de par.
+
+- As **casas decimais** dos 8 pares originais continuam vindo da tabela do cliente (`PARES`);
+  qualquer par acrescentado usa o `tickSize` do `/fapi/v1/exchangeInfo`. Usar o `pricePrecision`
+  em vez do `tickSize` daria 4 casas no SOLUSDT e 6 no DOGEUSDT, diferente do que o cliente vê
+  no gráfico.
+- Símbolo que a Binance não lista em Futuros é **recusado no "Iniciar"** com o nome na tela. Sem
+  isso um erro de digitação (ou um par que saiu de linha, como o MATICUSDT) viraria uma linha
+  morta no quadro, sem nada explicando o porquê. Sem internet a checagem é pulada.
+- O quadro **nunca deixa a janela passar da tela**: em tela larga (≥ 1280 px) a janela fica em
+  duas colunas, com a regra à esquerda e os 16 pares à direita; em tela estreita volta ao
+  empilhado de sempre e o quadro ganha rolagem, com o cabeçalho parado.
 
 ## Visual (janela e pop-ups)
 

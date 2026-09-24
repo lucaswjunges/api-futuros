@@ -51,10 +51,15 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from alerta_futuros import ATRASO_MAX_POPUP_MS, PARES, Avaliacao, Monitor, Parametros, Popups, Registro
-from campos_formulario import CAMPOS, CampoInvalido, parametros_dos_textos, textos_de
+from alerta_futuros import (
+    ATRASO_MAX_POPUP_MS, LIMITE_PARES, PARES, Avaliacao, Monitor, Parametros, Popups, Registro,
+    baixar_casas_decimais, pares_desconhecidos, resolver_pares,
+)
+from campos_formulario import (
+    CAMPOS, CampoInvalido, pares_do_texto, parametros_dos_textos, texto_dos_pares, textos_de,
+)
 from componentes import DiagramaVela15, Indicador, PainelPares, estado_do_monitor, proxima_avaliacao
-from configuracao import Configuracao, carregar, salvar, validar
+from configuracao import Configuracao, carregar, salvar, validar, validar_pares
 from tema import (
     BORDA, CAMINHO_ICONE, CAMPO, FUNDO, LINHA, OURO, OURO_ATIVO, OURO_TEXTO, PAINEL, TEXTO, TEXTO_APAGADO,
     TEXTO_FRACO, VERMELHO, Tema, preparar_dpi,
@@ -101,6 +106,26 @@ def construir_ao_avaliar(registro: Registro, fila: "queue.Queue[Avaliacao]"):
         fila.put(av)
 
     return ao_avaliar
+
+
+# Largura de tela a partir da qual a janela usa duas colunas (regra à esquerda, quadro de
+# situação à direita) em vez de empilhar tudo. Com 16 pares (pedido do cliente em 23/09/2026) o
+# empilhado passa de 1000 px de altura e não cabe num notebook; lado a lado o mesmo conteúdo fica
+# em ~620 px de altura e sobra tela de sobra. Abaixo desta largura volta ao empilhado de sempre.
+LARGURA_MIN_LADO_A_LADO = 1280
+
+
+def altura_maxima_do_quadro(altura_tela: int, altura_do_resto: int, minimo: int = 120) -> int:
+    """Quanto o quadro de situação pode ocupar sem que a janela passe da tela.
+
+    Existe por causa do teto de 16 pares (23/09/2026): o quadro dobra de altura e, num notebook
+    de 768 px, a janela inteira passaria de 830 px — os botões Iniciar/Parar ficariam abaixo da
+    borda de baixo, fora do alcance. `altura_do_resto` é tudo que não é o quadro (cabeçalho,
+    regra, botões, rodapé) e os 10% descontados cobrem barra de tarefas e moldura da janela.
+    Nunca devolve menos que `minimo`: é melhor a janela ficar um pouco alta numa tela minúscula
+    do que o quadro virar uma fresta de uma linha."""
+    disponivel = int(altura_tela * 0.90) - altura_do_resto
+    return max(minimo, disponivel)
 
 
 def caminho_do_executavel() -> Path:
@@ -178,16 +203,36 @@ class Aplicativo:
 
     def _montar(self, root: tk.Tk) -> None:
         self.tema = Tema(root)
+        px = self.tema.px
         root.title("Alerta Futuros")
         root.configure(bg=FUNDO)
         root.resizable(False, False)
         self._definir_icone(root)
 
-        self._montar_cabecalho(root)
-        self._montar_regra(root)
-        self._montar_acoes(root)
+        # Duas colunas em tela larga (ver LARGURA_MIN_LADO_A_LADO): a regra fica à esquerda e o
+        # quadro de situação à direita, em altura cheia. É o que dá lugar aos 16 pares sem a
+        # janela virar uma coluna de mais de mil pixels.
+        self.lado_a_lado = root.winfo_screenwidth() >= LARGURA_MIN_LADO_A_LADO
+        corpo = tk.Frame(root, bg=FUNDO)
+        corpo.pack(fill="both", expand=True)
+        if self.lado_a_lado:
+            self.coluna_esquerda = tk.Frame(corpo, bg=FUNDO)
+            self.coluna_esquerda.grid(row=0, column=0, sticky="nw")
+            self.coluna_direita = tk.Frame(corpo, bg=FUNDO)
+            self.coluna_direita.grid(row=0, column=1, sticky="nw", padx=(px(8), 0))
+        else:
+            self.coluna_esquerda = self.coluna_direita = corpo
+
+        self._montar_cabecalho(self.coluna_esquerda)
+        self._montar_regra(self.coluna_esquerda)
+        self._montar_acoes(self.coluna_esquerda)
+        # o rodapé é montado antes do quadro de propósito: o quadro precisa saber quanto de
+        # altura sobra na tela, e isso só dá pra medir com todo o resto da janela já montado
+        # (ver _montar_quadro_situacao). No empilhado ele entra no lugar certo com pack(before=),
+        # e por isso precisa morar no MESMO pai do quadro — pack(before=) não atravessa pais.
+        self._montar_rodape(root if self.lado_a_lado else corpo)
         self._montar_quadro_situacao(root)
-        self._montar_rodape(root)
+        self._aquecer_casas_decimais()
 
     def _definir_icone(self, root: tk.Tk) -> None:
         """Logo da Blumenau TI na barra de título e na barra de tarefas (sem isso o Tk mostra a
@@ -198,7 +243,7 @@ class Aplicativo:
         except tk.TclError as e:
             log.debug("Ícone da janela não carregado (%s).", e)
 
-    def _montar_cabecalho(self, root: tk.Tk) -> None:
+    def _montar_cabecalho(self, root: tk.Misc) -> None:
         px, tema = self.tema.px, self.tema
         cabecalho = tk.Frame(root, bg=FUNDO, padx=px(20))
         cabecalho.pack(fill="x", pady=(px(12), 0))
@@ -207,10 +252,16 @@ class Aplicativo:
         tk.Label(linha, text="Alerta Futuros", bg=FUNDO, fg=TEXTO, font=tema.numeros(17)).pack(side="left")
         self.indicador = Indicador(linha, tema)
         self.indicador.pack(side="right")
-        tk.Label(cabecalho, text=f"Acompanha {len(PARES)} pares da Binance Futuros e avisa quando a regra acontece.",
-                 bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(9)).pack(anchor="w", pady=(px(2), 0))
+        self.rotulo_subtitulo = tk.Label(cabecalho, text=self._texto_subtitulo(), bg=FUNDO, fg=TEXTO_FRACO,
+                                         font=tema.texto(9))
+        self.rotulo_subtitulo.pack(anchor="w", pady=(px(2), 0))
 
-    def _montar_regra(self, root: tk.Tk) -> None:
+    def _texto_subtitulo(self) -> str:
+        n = len(self.config.pares)
+        pares = "1 par" if n == 1 else f"{n} pares"
+        return f"Acompanha {pares} da Binance Futuros e avisa quando a regra acontece."
+
+    def _montar_regra(self, root: tk.Misc) -> None:
         px, tema = self.tema.px, self.tema
         textos = textos_de(self.config.parametros)
         regra = tk.Frame(root, bg=FUNDO, padx=px(20))
@@ -244,12 +295,37 @@ class Aplicativo:
         self._campo(frase, "ajuste_pct", textos, primeiro=True)
         self._palavras(frase, "% acima do fechamento (W) ou abaixo dele (Z)")
 
+        self._montar_campo_pares(regra)
+
         tk.Checkbutton(regra, text="Iniciar junto com o Windows", variable=self.var_iniciar_windows,
                        bg=FUNDO, fg=TEXTO, selectcolor=CAMPO, activebackground=FUNDO, activeforeground=TEXTO,
                        highlightthickness=0, font=tema.texto(10)).pack(anchor="w", pady=(px(12), 0))
         if sys.platform != "win32":
             tk.Label(regra, text="(disponível só no Windows)", bg=FUNDO, fg=TEXTO_APAGADO,
                      font=tema.texto(8)).pack(anchor="w", padx=(px(24), 0))
+
+    def _montar_campo_pares(self, regra: tk.Frame) -> None:
+        """Lista de pares acompanhados — editável desde 23/09/2026, quando o teto subiu de 8 para
+        16. É um Text de 3 linhas, e não um Entry de uma linha, porque 16 símbolos dão ~130
+        caracteres: numa linha só o cliente teria que rolar o campo de lado para enxergar o que
+        digitou. Aceita espaço, vírgula ou quebra de linha (ver campos_formulario.pares_do_texto),
+        pra poder colar a lista do jeito que ele tiver em mãos."""
+        px, tema = self.tema.px, self.tema
+        self._titulo(regra, "Pares acompanhados", acima=px(10))
+        # width em caracteres: o padrão do Text é 80, o que sozinho esticaria a coluna da regra
+        # para ~660 px e estouraria a largura da tela no layout lado a lado. O fill="x" do pack
+        # faz o campo acompanhar a coluna de qualquer jeito.
+        self.entrada_pares = tk.Text(regra, height=3, width=40, wrap="word", font=tema.numeros(10),
+                                     bg=CAMPO, fg=TEXTO, insertbackground=OURO, relief="flat", bd=0,
+                                     highlightthickness=1, highlightbackground=BORDA, highlightcolor=OURO,
+                                     padx=px(6), pady=px(5))
+        self.entrada_pares.insert("1.0", texto_dos_pares(self.config.pares))
+        self.entrada_pares.pack(fill="x", pady=(px(3), 0))
+        self.entrada_pares.bind("<KeyRelease>", lambda _evt: self._marcar_erro_pares(False))
+        tk.Label(regra, text=f"Símbolo como aparece na Binance (BTCUSDT), separados por espaço ou vírgula. "
+                             f"No máximo {LIMITE_PARES}. Vale a partir do próximo “Iniciar”.",
+                 bg=FUNDO, fg=TEXTO_APAGADO, font=tema.texto(8), wraplength=px(392),
+                 justify="left").pack(anchor="w", pady=(px(3), 0))
 
     def _titulo(self, master: tk.Misc, texto: str, acima: int = 0) -> None:
         tk.Label(master, text=texto, bg=FUNDO, fg=TEXTO, font=self.tema.texto(10, "bold")).pack(
@@ -277,7 +353,7 @@ class Aplicativo:
         entrada.bind("<KeyRelease>", lambda _evt, c=campo: self._ao_editar(c))
         self.entradas[campo] = entrada
 
-    def _montar_acoes(self, root: tk.Tk) -> None:
+    def _montar_acoes(self, root: tk.Misc) -> None:
         px, tema = self.tema.px, self.tema
         acoes = tk.Frame(root, bg=FUNDO, padx=px(20))
         acoes.pack(fill="x", pady=(px(14), 0))
@@ -290,7 +366,7 @@ class Aplicativo:
         self._estilizar_botoes(rodando=False)
 
         self.rotulo_erro = tk.Label(root, text="", bg=FUNDO, fg=VERMELHO, font=tema.texto(9),
-                                    wraplength=px(580), justify="left", anchor="w")
+                                    wraplength=px(392), justify="left", anchor="w")
         self.rotulo_erro.pack(fill="x", padx=px(20), pady=(px(4), 0))
 
     def _estilizar_botoes(self, rodando: bool) -> None:
@@ -302,17 +378,42 @@ class Aplicativo:
                              activebackground=FUNDO, highlightbackground=BORDA, cursor="")
 
     def _montar_quadro_situacao(self, root: tk.Tk) -> None:
+        """Monta o quadro com a lista de pares atual, limitado ao que sobra de tela. Chamado de
+        novo (via _reconstruir_quadro) sempre que a lista de pares muda — o quadro tem uma linha
+        fixa por par, então trocar a lista é refazer o quadro."""
+        px = self.tema.px
+        root.update_idletasks()  # sem isso winfo_reqheight() ainda devolve o "1" inicial do Tk
+        # Empilhado, o quadro divide a altura com tudo que já está montado; lado a lado ele tem a
+        # coluna inteira, e só o rodapé (que atravessa as duas) desconta.
+        resto = self.rodape.winfo_reqheight() + px(24) if self.lado_a_lado else root.winfo_reqheight()
+        altura_max = altura_maxima_do_quadro(root.winfo_screenheight(), resto)
         p = self.config.parametros
-        self.painel = PainelPares(root, self.tema, PARES, p.rsi_abaixo, p.rsi_acima)
-        self.painel.pack(fill="x", pady=(self.tema.px(10), 0))
+        self.painel = PainelPares(self.coluna_direita, self.tema, self.config.pares,
+                                  p.rsi_abaixo, p.rsi_acima, altura_max)
+        posicao = {} if self.lado_a_lado else {"before": self.rodape}
+        self.painel.pack(fill="x", pady=(px(10), 0), **posicao)
 
-    def _montar_rodape(self, root: tk.Tk) -> None:
+    def _reconstruir_quadro(self) -> None:
+        self.painel.destroy()
+        self._montar_quadro_situacao(self.root)
+        self.rotulo_subtitulo.config(text=self._texto_subtitulo())
+
+    def _aquecer_casas_decimais(self) -> None:
+        """Baixa em segundo plano as casas decimais dos pares da Binance, se a lista tiver algum
+        par fora da tabela do cliente. É só pra que o clique em "Iniciar" não fique esperando um
+        download de alguns MB — se não der tempo (ou não tiver internet), iniciar() consulta na
+        hora e, no pior caso, o par novo sai com CASAS_PADRAO casas."""
+        if all(s in PARES for s in self.config.pares):
+            return
+        threading.Thread(target=baixar_casas_decimais, daemon=True).start()
+
+    def _montar_rodape(self, root: tk.Misc) -> None:
         """Esquerda: onde o registro é gravado (parado) ou a hora da próxima avaliação (rodando).
         Direita: link pra página de "outras versões" (Opção A, Opção B, versão com IA) — pedido do
         Hugo/Lucas em 19/09/2026 pra já ir acessível a partir da versão que vai pro cliente agora
         como MVP (ver URL_OUTRAS_VERSOES)."""
         px, tema = self.tema.px, self.tema
-        rodape = tk.Frame(root, bg=FUNDO, padx=px(20))
+        rodape = self.rodape = tk.Frame(root, bg=FUNDO, padx=px(20))
         rodape.pack(fill="x", pady=(px(8), px(8)))
         self.rotulo_rodape = tk.Label(rodape, text=self._texto_rodape_parado(), bg=FUNDO, fg=TEXTO_APAGADO,
                                       font=tema.texto(9))
@@ -356,15 +457,25 @@ class Aplicativo:
         for entrada in self.entradas.values():
             entrada.config(state="normal" if habilitar else "disabled",
                            highlightbackground=BORDA if habilitar else LINHA)
+        self.entrada_pares.config(state="normal" if habilitar else "disabled",
+                                  highlightbackground=BORDA if habilitar else LINHA)
 
     def _marcar_erro(self, campo: str, com_erro: bool) -> None:
         cor = VERMELHO if com_erro else BORDA
         self.entradas[campo].configure(highlightbackground=cor, highlightcolor=VERMELHO if com_erro else OURO)
 
+    def _marcar_erro_pares(self, com_erro: bool) -> None:
+        self.entrada_pares.configure(highlightbackground=VERMELHO if com_erro else BORDA,
+                                     highlightcolor=VERMELHO if com_erro else OURO)
+
+    def _ler_pares(self) -> list[str]:
+        return pares_do_texto(self.entrada_pares.get("1.0", "end"))
+
     def iniciar(self) -> None:
         self.rotulo_erro.config(text="")
         for campo in CAMPOS:
             self._marcar_erro(campo, False)
+        self._marcar_erro_pares(False)
         try:
             parametros = self._ler_parametros()
         except CampoInvalido as e:
@@ -373,11 +484,23 @@ class Aplicativo:
             self.rotulo_erro.config(text=str(e))
             return
         erros = validar(parametros)
-        if erros:
-            self.rotulo_erro.config(text="\n".join(erros))
+        pares = self._ler_pares()
+        erros_pares = validar_pares(pares)
+        if not erros_pares:
+            # só depois do formato estar certo: esta checagem custa uma consulta à Binance
+            desconhecidos = pares_desconhecidos(pares)
+            if desconhecidos:
+                erros_pares.append(f"A Binance não tem esses pares em Futuros: {', '.join(desconhecidos)}. "
+                                   "Confira a grafia (o nome costuma terminar em USDT).")
+        if erros_pares:
+            self._marcar_erro_pares(True)
+        if erros or erros_pares:
+            self.rotulo_erro.config(text="\n".join(erros + erros_pares))
             return
 
-        self.config = Configuracao(parametros=parametros, iniciar_com_windows=self.var_iniciar_windows.get())
+        mudou_pares = pares != list(self.config.pares)
+        self.config = Configuracao(parametros=parametros, iniciar_com_windows=self.var_iniciar_windows.get(),
+                                   pares=pares)
         try:
             salvar(self.config, self.caminho_config)
         except OSError as e:
@@ -385,10 +508,13 @@ class Aplicativo:
         self._aplicar_inicio_automatico()
         self._parametros_desenho = parametros
         self.diagrama.atualizar(parametros.setor_pct)
+        if mudou_pares:
+            self._reconstruir_quadro()  # uma linha por par: lista nova = quadro novo
         self.painel.definir_faixas(parametros.rsi_abaixo, parametros.rsi_acima)
 
         self.registro = Registro(PASTA_LOGS)
-        self.monitor = Monitor(parametros, construir_ao_avaliar(self.registro, self.fila))
+        self.monitor = Monitor(parametros, construir_ao_avaliar(self.registro, self.fila),
+                               resolver_pares(pares))
         self.thread_motor = threading.Thread(target=lambda: asyncio.run(self.monitor.executar()), daemon=True)
         self.thread_motor.start()
 

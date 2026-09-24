@@ -71,6 +71,24 @@ def proxima_avaliacao(agora: datetime) -> datetime:
     return base.replace(minute=0) + timedelta(minutes=minutos)
 
 
+def altura_visivel_das_linhas(n_pares: int, altura_linha: int, rodape: int,
+                              altura_max: int | None) -> tuple[int, bool]:
+    """(altura em px da área de linhas, precisa de rolagem?) do quadro de situação.
+
+    Com o teto de 16 pares (pedido do cliente em 23/09/2026) o quadro dobra de altura e passa a
+    caber em umas telas e não em outras. Quando não cabe, a área encolhe até `altura_max` e
+    ganha rolagem — o que NÃO pode acontecer é a janela crescer além da tela e levar os botões
+    Iniciar/Parar pra fora do alcance do cliente. Sempre sobra um número inteiro de linhas:
+    meia linha cortada na borda inferior parece defeito."""
+    natural = altura_linha * max(n_pares, 0) + rodape
+    if altura_max is None or natural <= altura_max:
+        return natural, False
+    # Rolando, a área termina exatamente no fim de uma linha e SEM o respiro do rodapé: aqueles
+    # px a mais seriam preenchidos pelo topo da linha seguinte, e uma fatia de 8 px de linha
+    # aparecendo na borda parece quadro quebrado, não conteúdo que continua.
+    return max(1, altura_max // altura_linha) * altura_linha, True
+
+
 # ───────────────────────────── widgets ─────────────────────────────
 
 
@@ -131,14 +149,20 @@ class DiagramaVela15(tk.Canvas):
             self.create_text(xr, y1 - c / 2, text="C", anchor="w", fill=TEXTO_FRACO, font=fonte)
 
 
-class PainelPares(tk.Canvas):
+class PainelPares(tk.Frame):
     """Quadro de situação: uma linha por par com o RSI(2) como marcador num eixo (faixas "Abaixo"
     e "Acima" tingidas), o setor da vela de 15m, o último sinal (W/Z + alvo), o fechamento e a
     hora. O cabeçalho carrega o mesmo eixo com os números dos limites, alinhado às linhas — é a
-    legenda e a régua ao mesmo tempo."""
+    legenda e a régua ao mesmo tempo.
+
+    São dois Canvas e não um só (mudança de 23/09/2026, junto com o teto de 16 pares): o
+    cabeçalho fica parado e só as linhas rolam. Com 8 pares nada rolava e o cabeçalho ficava
+    naturalmente no topo; com 16 numa tela baixa, rolar um Canvas único levaria a régua do RSI
+    junto e o cliente perderia justamente a legenda que explica o eixo."""
 
     LARGURA, MARGEM = 588, 20  # px de projeto: conteúdo e margem interna (painel vai de borda a borda)
     ALTURA_CABECALHO, ALTURA_LINHA, RODAPE = 42, 25, 8
+    LARGURA_BARRA = 12         # barra de rolagem, só aparece quando as linhas não cabem
     X_PAR = 0                  # âncora w
     X_EIXO, L_EIXO = 92, 160   # início e comprimento do eixo de RSI
     X_RSI = 306                # âncora e
@@ -148,17 +172,32 @@ class PainelPares(tk.Canvas):
     X_HORA = 588               # âncora e
     RAIO_MARCADOR, ESPESSURA_EIXO = 5, 6
 
-    def __init__(self, master, tema: Tema, pares, rsi_abaixo: float, rsi_acima: float):
+    def __init__(self, master, tema: Tema, pares, rsi_abaixo: float, rsi_acima: float,
+                 altura_max: int | None = None):
+        super().__init__(master, bg=PAINEL)
         self.tema = tema
         px = tema.px
         self.margem = px(self.MARGEM)
         self.pares = list(pares)
         self.largura_total = px(self.LARGURA) + 2 * self.margem
-        altura = px(self.ALTURA_CABECALHO) + px(self.ALTURA_LINHA) * len(self.pares) + px(self.RODAPE)
-        super().__init__(master, width=self.largura_total, height=altura, bg=PAINEL, highlightthickness=0, bd=0)
+        self.altura_natural = px(self.ALTURA_LINHA) * len(self.pares) + px(self.RODAPE)
+        altura_linhas, self.rolagem = altura_visivel_das_linhas(
+            len(self.pares), px(self.ALTURA_LINHA), px(self.RODAPE), altura_max)
+
+        self.cabecalho = tk.Canvas(self, width=self.largura_total, height=px(self.ALTURA_CABECALHO),
+                                   bg=PAINEL, highlightthickness=0, bd=0)
+        self.corpo = tk.Canvas(self, width=self.largura_total, height=altura_linhas,
+                               bg=PAINEL, highlightthickness=0, bd=0)
+        self.cabecalho.grid(row=0, column=0, sticky="ew")
+        self.corpo.grid(row=1, column=0, sticky="nsew")
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
         self.rsi_abaixo, self.rsi_acima = rsi_abaixo, rsi_acima
         self._linhas: dict[str, dict[str, int]] = {}
         self._montar()
+        if self.rolagem:
+            self._ligar_rolagem(altura_linhas)
 
     # coordenadas
 
@@ -173,59 +212,79 @@ class PainelPares(tk.Canvas):
     def _montar(self) -> None:
         px, tema = self.tema.px, self.tema
         fraco, apagado = tema.texto(9), tema.numeros(8)
+        cab = self.cabecalho
         y_nomes, y_numeros, y_eixo = px(12), px(27), px(37)
-        self.create_text(self._x(self.X_PAR), y_nomes, text="Par", anchor="w", fill=TEXTO_FRACO, font=fraco)
-        self.create_text(self._x(self.X_EIXO), y_nomes, text="RSI(2)", anchor="w", fill=TEXTO_FRACO, font=fraco)
-        self.create_text(self._x(self.X_SETOR), y_nomes, text="Setor", anchor="center", fill=TEXTO_FRACO, font=fraco)
-        self.create_text(self._x(self.X_SINAL), y_nomes, text="Sinal", anchor="e", fill=TEXTO_FRACO, font=fraco)
-        self.create_text(self._x(self.X_FECH), y_nomes, text="Fechamento", anchor="e", fill=TEXTO_FRACO, font=fraco)
-        self.create_text(self._x(self.X_HORA), y_nomes, text="Hora", anchor="e", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_PAR), y_nomes, text="Par", anchor="w", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_EIXO), y_nomes, text="RSI(2)", anchor="w", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_SETOR), y_nomes, text="Setor", anchor="center", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_SINAL), y_nomes, text="Sinal", anchor="e", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_FECH), y_nomes, text="Fechamento", anchor="e", fill=TEXTO_FRACO, font=fraco)
+        cab.create_text(self._x(self.X_HORA), y_nomes, text="Hora", anchor="e", fill=TEXTO_FRACO, font=fraco)
 
         # régua do cabeçalho: os dois limites sobre o mesmo eixo das linhas (as pontas são 0 e 100;
         # escrever isso colidia com os limites, que ficam justamente perto das pontas)
         self._legenda = {
-            "abaixo": self.create_text(0, y_numeros, text="", anchor="center", fill=VERMELHO, font=apagado),
-            "acima": self.create_text(0, y_numeros, text="", anchor="center", fill=VERDE, font=apagado),
+            "abaixo": cab.create_text(0, y_numeros, text="", anchor="center", fill=VERMELHO, font=apagado),
+            "acima": cab.create_text(0, y_numeros, text="", anchor="center", fill=VERDE, font=apagado),
         }
-        self._legenda.update(self._eixo(y_eixo, px(4)))
+        self._legenda.update(self._eixo(cab, y_eixo, px(4)))
 
-        y = px(self.ALTURA_CABECALHO)
+        y = 0
         for simbolo in self.pares:
             self._linhas[simbolo] = self._linha(simbolo, y + px(self.ALTURA_LINHA) / 2)
             y += px(self.ALTURA_LINHA)
         self.definir_faixas(self.rsi_abaixo, self.rsi_acima)
 
-    def _eixo(self, y: float, espessura: int) -> dict[str, int]:
+    def _ligar_rolagem(self, altura_visivel: int) -> None:
+        """Barra de rolagem + roda do mouse, só quando as linhas não cabem na altura disponível."""
+        px = self.tema.px
+        self.corpo.configure(scrollregion=(0, 0, self.largura_total, self.altura_natural))
+        self.barra = tk.Scrollbar(self, orient="vertical", command=self.corpo.yview,
+                                  width=px(self.LARGURA_BARRA), bg=BORDA, troughcolor=FUNDO,
+                                  activebackground=TEXTO_FRACO, borderwidth=0, highlightthickness=0)
+        self.barra.grid(row=1, column=1, sticky="ns")
+        self.corpo.configure(yscrollcommand=self.barra.set)
+        # <MouseWheel> é Windows/macOS; Button-4/5 é X11 (o Ubuntu daqui). Ligados só no corpo
+        # pra roda do mouse sobre os campos de cima continuar fazendo o que sempre fez.
+        self.corpo.bind("<MouseWheel>", self._roda_mouse)
+        self.corpo.bind("<Button-4>", lambda _e: self.corpo.yview_scroll(-1, "units"))
+        self.corpo.bind("<Button-5>", lambda _e: self.corpo.yview_scroll(1, "units"))
+        self.corpo.configure(yscrollincrement=px(self.ALTURA_LINHA))
+
+    def _roda_mouse(self, evento) -> None:
+        self.corpo.yview_scroll(-1 if evento.delta > 0 else 1, "units")
+
+    def _eixo(self, canvas: tk.Canvas, y: float, espessura: int) -> dict[str, int]:
         """Trilho neutro + as duas faixas coloridas (coordenadas ajustadas em definir_faixas)."""
         x0, x1 = self._x(self.X_EIXO), self._x(self.X_EIXO + self.L_EIXO)
         return {
-            "trilho": self.create_line(x0, y, x1, y, fill=TRILHO, width=espessura, capstyle="round"),
-            "faixa_abaixo": self.create_line(x0, y, x0, y, fill=VERMELHO_FAIXA, width=espessura, capstyle="round"),
-            "faixa_acima": self.create_line(x1, y, x1, y, fill=VERDE_FAIXA, width=espessura, capstyle="round"),
+            "trilho": canvas.create_line(x0, y, x1, y, fill=TRILHO, width=espessura, capstyle="round"),
+            "faixa_abaixo": canvas.create_line(x0, y, x0, y, fill=VERMELHO_FAIXA, width=espessura, capstyle="round"),
+            "faixa_acima": canvas.create_line(x1, y, x1, y, fill=VERDE_FAIXA, width=espessura, capstyle="round"),
         }
 
     def _linha(self, simbolo: str, y: float) -> dict[str, int]:
-        px, tema = self.tema.px, self.tema
+        px, tema, corpo = self.tema.px, self.tema, self.corpo
         meia = px(self.ALTURA_LINHA) / 2
         r = px(self.RAIO_MARCADOR)
         itens = {
-            "fundo": self.create_rectangle(0, y - meia, self.largura_total, y + meia, fill="", outline=""),
-            "par": self.create_text(self._x(self.X_PAR), y, text=simbolo, anchor="w", fill=TEXTO_FRACO,
-                                    font=tema.numeros(10, "bold")),
+            "fundo": corpo.create_rectangle(0, y - meia, self.largura_total, y + meia, fill="", outline=""),
+            "par": corpo.create_text(self._x(self.X_PAR), y, text=simbolo, anchor="w", fill=TEXTO_FRACO,
+                                     font=tema.numeros(10, "bold")),
         }
-        itens.update(self._eixo(y, px(self.ESPESSURA_EIXO)))
-        itens["marcador"] = self.create_oval(-r, y - r, r, y + r, fill=TEXTO, outline=PAINEL,
-                                             width=px(2), state="hidden")
-        itens["rsi"] = self.create_text(self._x(self.X_RSI), y, text="—", anchor="e", fill=TEXTO_APAGADO,
-                                        font=tema.numeros(10))
-        itens["setor"] = self.create_text(self._x(self.X_SETOR), y, text="—", anchor="center", fill=TEXTO_APAGADO,
-                                          font=tema.numeros(10))
-        itens["sinal"] = self.create_text(self._x(self.X_SINAL), y, text="", anchor="e", fill=TEXTO,
-                                          font=tema.numeros(10, "bold"))
-        itens["fechamento"] = self.create_text(self._x(self.X_FECH), y, text="—", anchor="e", fill=TEXTO_APAGADO,
-                                               font=tema.numeros(10))
-        itens["hora"] = self.create_text(self._x(self.X_HORA), y, text="—", anchor="e", fill=TEXTO_APAGADO,
-                                         font=tema.numeros(9))
+        itens.update(self._eixo(corpo, y, px(self.ESPESSURA_EIXO)))
+        itens["marcador"] = corpo.create_oval(-r, y - r, r, y + r, fill=TEXTO, outline=PAINEL,
+                                              width=px(2), state="hidden")
+        itens["rsi"] = corpo.create_text(self._x(self.X_RSI), y, text="—", anchor="e", fill=TEXTO_APAGADO,
+                                         font=tema.numeros(10))
+        itens["setor"] = corpo.create_text(self._x(self.X_SETOR), y, text="—", anchor="center", fill=TEXTO_APAGADO,
+                                           font=tema.numeros(10))
+        itens["sinal"] = corpo.create_text(self._x(self.X_SINAL), y, text="", anchor="e", fill=TEXTO,
+                                           font=tema.numeros(10, "bold"))
+        itens["fechamento"] = corpo.create_text(self._x(self.X_FECH), y, text="—", anchor="e", fill=TEXTO_APAGADO,
+                                                font=tema.numeros(10))
+        itens["hora"] = corpo.create_text(self._x(self.X_HORA), y, text="—", anchor="e", fill=TEXTO_APAGADO,
+                                          font=tema.numeros(9))
         return itens
 
     # atualização
@@ -236,49 +295,50 @@ class PainelPares(tk.Canvas):
         self.rsi_abaixo, self.rsi_acima = rsi_abaixo, rsi_acima
         x0, x1 = self._x(self.X_EIXO), self._x(self.X_EIXO + self.L_EIXO)
         x_abaixo, x_acima = self._x_rsi(rsi_abaixo), self._x_rsi(rsi_acima)
-        self.itemconfigure(self._legenda["abaixo"], text=formatar_num(rsi_abaixo, 0))
-        self.itemconfigure(self._legenda["acima"], text=formatar_num(rsi_acima, 0))
-        y_numeros = self.coords(self._legenda["abaixo"])[1]
-        self.coords(self._legenda["abaixo"], x_abaixo, y_numeros)
-        self.coords(self._legenda["acima"], x_acima, y_numeros)
-        for itens in (self._legenda, *self._linhas.values()):
-            y = self.coords(itens["trilho"])[1]
-            self.coords(itens["faixa_abaixo"], x0, y, x_abaixo, y)
-            self.coords(itens["faixa_acima"], x_acima, y, x1, y)
-            self.itemconfigure(itens["faixa_abaixo"], state="normal" if x_abaixo - x0 >= 1 else "hidden")
-            self.itemconfigure(itens["faixa_acima"], state="normal" if x1 - x_acima >= 1 else "hidden")
+        cab = self.cabecalho
+        cab.itemconfigure(self._legenda["abaixo"], text=formatar_num(rsi_abaixo, 0))
+        cab.itemconfigure(self._legenda["acima"], text=formatar_num(rsi_acima, 0))
+        y_numeros = cab.coords(self._legenda["abaixo"])[1]
+        cab.coords(self._legenda["abaixo"], x_abaixo, y_numeros)
+        cab.coords(self._legenda["acima"], x_acima, y_numeros)
+        for canvas, itens in ((cab, self._legenda), *((self.corpo, i) for i in self._linhas.values())):
+            y = canvas.coords(itens["trilho"])[1]
+            canvas.coords(itens["faixa_abaixo"], x0, y, x_abaixo, y)
+            canvas.coords(itens["faixa_acima"], x_acima, y, x1, y)
+            canvas.itemconfigure(itens["faixa_abaixo"], state="normal" if x_abaixo - x0 >= 1 else "hidden")
+            canvas.itemconfigure(itens["faixa_acima"], state="normal" if x1 - x_acima >= 1 else "hidden")
 
     def atualizar(self, av: Avaliacao) -> None:
         itens = self._linhas.get(av.simbolo)
         if itens is None:
             return
-        px = self.tema.px
+        px, corpo = self.tema.px, self.corpo
         r = px(self.RAIO_MARCADOR)
-        y = self.coords(itens["trilho"])[1]
+        y = corpo.coords(itens["trilho"])[1]
         cor_faixa = VERDE if av.faixa == "ACIMA" else VERMELHO if av.faixa == "ABAIXO" else TEXTO
-        self.itemconfigure(itens["par"], fill=TEXTO)
+        corpo.itemconfigure(itens["par"], fill=TEXTO)
         if av.rsi is None:
-            self.itemconfigure(itens["marcador"], state="hidden")
-            self.itemconfigure(itens["rsi"], text="—", fill=TEXTO_APAGADO)
+            corpo.itemconfigure(itens["marcador"], state="hidden")
+            corpo.itemconfigure(itens["rsi"], text="—", fill=TEXTO_APAGADO)
         else:
             x = self._x_rsi(av.rsi)
-            self.coords(itens["marcador"], x - r, y - r, x + r, y + r)
-            self.itemconfigure(itens["marcador"], fill=cor_faixa, state="normal")
-            self.itemconfigure(itens["rsi"], text=formatar_num(av.rsi), fill=cor_faixa)
+            corpo.coords(itens["marcador"], x - r, y - r, x + r, y + r)
+            corpo.itemconfigure(itens["marcador"], fill=cor_faixa, state="normal")
+            corpo.itemconfigure(itens["rsi"], text=formatar_num(av.rsi), fill=cor_faixa)
         if av.setor:
-            self.itemconfigure(itens["setor"], text=av.setor, fill=TEXTO)
+            corpo.itemconfigure(itens["setor"], text=av.setor, fill=TEXTO)
         else:
-            self.itemconfigure(itens["setor"], text="pequena", fill=TEXTO_APAGADO)
+            corpo.itemconfigure(itens["setor"], text="pequena", fill=TEXTO_APAGADO)
         if av.sinal:
             cor, alvo = (VERDE, "W") if av.sinal == "X" else (VERMELHO, "Z")
-            self.itemconfigure(itens["sinal"], text=f"{alvo} {av.alvo_texto}", fill=cor)
-            self.itemconfigure(itens["fundo"], fill=VERDE_LINHA if av.sinal == "X" else VERMELHO_LINHA)
+            corpo.itemconfigure(itens["sinal"], text=f"{alvo} {av.alvo_texto}", fill=cor)
+            corpo.itemconfigure(itens["fundo"], fill=VERDE_LINHA if av.sinal == "X" else VERMELHO_LINHA)
         else:
-            self.itemconfigure(itens["sinal"], text="")
-            self.itemconfigure(itens["fundo"], fill="")
-        self.itemconfigure(itens["fechamento"], text=av.fechamento_texto, fill=TEXTO)
+            corpo.itemconfigure(itens["sinal"], text="")
+            corpo.itemconfigure(itens["fundo"], fill="")
+        corpo.itemconfigure(itens["fechamento"], text=av.fechamento_texto, fill=TEXTO)
         try:
             hora = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
         except (OverflowError, OSError, ValueError):  # nunca deixa uma falha de formatação derrubar a janela
             hora = "—"
-        self.itemconfigure(itens["hora"], text=hora, fill=TEXTO_FRACO)
+        corpo.itemconfigure(itens["hora"], text=hora, fill=TEXTO_FRACO)

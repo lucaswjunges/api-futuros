@@ -6,8 +6,11 @@ import unittest
 from pathlib import Path
 
 from alerta_futuros import (
+    CASAS_PADRAO,
+    LIMITE_PARES,
     MS_5M,
     MS_15M,
+    PARES,
     Ativo,
     Avaliacao,
     Monitor,
@@ -15,14 +18,106 @@ from alerta_futuros import (
     Registro,
     RSIWilder,
     Vela,
+    casas_de_exchange_info,
+    casas_do_tick,
     cruzamento,
     faixa_rsi,
     fecha_vela_15m,
     formatar_preco,
+    pares_desconhecidos,
+    resolver_pares,
     setor_vela15,
 )
 
 P = Parametros()
+
+
+class TestCasasDecimais(unittest.TestCase):
+    """Casas decimais dos pares acrescentados depois dos 8 originais (teto de 16, 23/09/2026):
+    elas saem do tickSize da Binance, não mais de uma tabela escrita à mão."""
+
+    def test_tick_size_com_zeros_de_enchimento(self):
+        # valores reais do /fapi/v1/exchangeInfo em 23/09/2026
+        self.assertEqual(casas_do_tick("0.0100"), 2)    # SOLUSDT
+        self.assertEqual(casas_do_tick("0.000010"), 5)  # DOGEUSDT
+        self.assertEqual(casas_do_tick("0.0001"), 4)    # XRPUSDT
+        self.assertEqual(casas_do_tick("0.001"), 3)     # LINKUSDT
+        self.assertEqual(casas_do_tick("0.10"), 1)      # BTCUSDT
+        self.assertEqual(casas_do_tick("1"), 0)
+        self.assertEqual(casas_do_tick("10"), 0)
+
+    def test_tick_size_estranho_cai_no_padrao(self):
+        for valor in ("", "abc", None, "NaN"):
+            self.assertEqual(casas_do_tick(valor), CASAS_PADRAO, valor)
+
+    def test_le_o_exchange_info_e_ignora_simbolo_sem_price_filter(self):
+        dados = {"symbols": [
+            {"symbol": "ADAUSDT", "filters": [{"filterType": "LOT_SIZE"},
+                                              {"filterType": "PRICE_FILTER", "tickSize": "0.00010"}]},
+            {"symbol": "SEMFILTRO", "filters": [{"filterType": "LOT_SIZE"}]},
+        ]}
+        self.assertEqual(casas_de_exchange_info(dados), {"ADAUSDT": 4})
+
+    def test_exchange_info_vazio_ou_sem_a_chave(self):
+        self.assertEqual(casas_de_exchange_info({}), {})
+
+
+class TestResolverPares(unittest.TestCase):
+    def test_tabela_do_cliente_vence_o_tick_size(self):
+        """O BTCUSDT é o caso concreto: o tickSize dá 1 casa, mas o cliente montou a tabela dele
+        olhando o gráfico e pediu 2. Mexer nisso mudaria o preço que ele já está acostumado a ver."""
+        resolvido = resolver_pares(["BTCUSDT"], catalogo={"BTCUSDT": 1})
+        self.assertEqual(resolvido, {"BTCUSDT": 2})
+
+    def test_par_novo_usa_o_catalogo_da_binance(self):
+        self.assertEqual(resolver_pares(["ADAUSDT"], catalogo={"ADAUSDT": 4}), {"ADAUSDT": 4})
+
+    def test_par_novo_sem_catalogo_cai_no_padrao(self):
+        self.assertEqual(resolver_pares(["ADAUSDT"], catalogo={}), {"ADAUSDT": CASAS_PADRAO})
+
+    def test_preserva_a_ordem_pedida(self):
+        pedidos = ["ETHUSDT", "BTCUSDT", "DOGEUSDT"]
+        self.assertEqual(list(resolver_pares(pedidos, catalogo={})), pedidos)
+
+    def test_normaliza_espaco_e_minuscula(self):
+        self.assertEqual(resolver_pares([" btcusdt ", "ethusdt"], catalogo={}),
+                         {"BTCUSDT": 2, "ETHUSDT": 2})
+
+    def test_os_8_originais_continuam_com_as_casas_de_sempre(self):
+        self.assertEqual(resolver_pares(list(PARES), catalogo={}), dict(PARES))
+
+
+class TestParesDesconhecidos(unittest.TestCase):
+    """Erro de digitação no campo de pares vira aviso, e não uma linha morta no quadro."""
+
+    CATALOGO = {"BTCUSDT": 2, "ADAUSDT": 4}
+
+    def test_aponta_o_que_a_binance_nao_tem(self):
+        self.assertEqual(pares_desconhecidos(["BTCUSDT", "BTCUSD"], self.CATALOGO), ["BTCUSD"])
+
+    def test_tudo_certo_nao_aponta_nada(self):
+        self.assertEqual(pares_desconhecidos(["BTCUSDT", "ADAUSDT"], self.CATALOGO), [])
+
+    def test_sem_catalogo_deixa_passar(self):
+        """Sem internet a consulta volta vazia; aí é melhor deixar iniciar do que travar o app."""
+        self.assertEqual(pares_desconhecidos(["QUALQUERCOISA"], {}), [])
+
+    def test_nao_repete_o_mesmo_erro_duas_vezes(self):
+        self.assertEqual(pares_desconhecidos(["btcusd", "BTCUSD"], self.CATALOGO), ["BTCUSD"])
+
+
+class TestMonitorComOutrosPares(unittest.TestCase):
+    def test_monta_um_ativo_por_par_ate_o_teto(self):
+        pares = resolver_pares([f"AA{i:02d}USDT" for i in range(LIMITE_PARES)], catalogo={})
+        monitor = Monitor(P, lambda _av: None, pares)
+        self.assertEqual(len(monitor.ativos), LIMITE_PARES)
+
+    def test_url_do_websocket_pede_os_streams_dos_pares_escolhidos(self):
+        monitor = Monitor(P, lambda _av: None, resolver_pares(["ADAUSDT", "BTCUSDT"], catalogo={}))
+        url = monitor._url_ws()
+        self.assertIn("adausdt@kline_5m", url)
+        self.assertIn("btcusdt@kline_5m", url)
+        self.assertNotIn("ethusdt", url)
 
 
 class TestRSI(unittest.TestCase):

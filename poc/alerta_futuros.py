@@ -53,7 +53,9 @@ REST_BASE = "https://fapi.binance.com"
 # As URLs antigas (/ws e /stream sem rota) conectam, mas não enviam velas.
 WS_BASE = "wss://fstream.binance.com/market/stream"
 
-# símbolo -> casas decimais exibidas no alerta (tabela do cliente)
+# símbolo -> casas decimais exibidas no alerta (tabela do cliente). Continua valendo como
+# preferência: para estes 8 pares é ela que manda, mesmo que a Binance sugira outra coisa
+# (o BTCUSDT é o caso: o tickSize dá 1 casa, o cliente pediu 2).
 PARES = {
     "BTCUSDT": 2,
     "ETHUSDT": 2,
@@ -64,6 +66,13 @@ PARES = {
     "LTCUSDT": 2,
     "DOGEUSDT": 5,
 }
+
+# Teto de pares acompanhados ao mesmo tempo (pedido do cliente em 23/09/2026: subir de 8 para 16).
+# Não é limitação da Binance — 16 pares são 32 streams, longe do limite de 200 por conexão — é o
+# que ainda cabe no quadro de situação de um notebook sem virar uma lista que ninguém lê.
+LIMITE_PARES = 16
+
+CASAS_PADRAO = 4  # par novo cujo tickSize não deu pra ler: 4 casas cobre a maioria das altcoins
 
 MS_5M = 5 * 60 * 1000
 MS_15M = 15 * 60 * 1000
@@ -208,6 +217,34 @@ def formatar_num(valor: float, casas: int = 1) -> str:
     return f"{valor:.{casas}f}".replace(".", ",")
 
 
+def casas_do_tick(tick_size: str) -> int:
+    """Casas decimais que fazem sentido exibir num par, a partir do tickSize da Binance.
+    Os zeros à direita do tickSize são só preenchimento do campo, não precisão de verdade:
+    '0.0100' -> 2, '0.000010' -> 5, '0.10' -> 1, '1' -> 0.
+
+    É daqui que sai a casa decimal dos pares NOVOS (os 8 originais continuam vindo de PARES).
+    Usar o `pricePrecision` do exchangeInfo em vez disto daria 4 casas no SOLUSDT e 6 no
+    DOGEUSDT — diferente da tabela que o cliente montou olhando o gráfico."""
+    try:
+        expoente = Decimal(str(tick_size).strip()).normalize().as_tuple().exponent
+    except (ArithmeticError, ValueError, TypeError):
+        return CASAS_PADRAO
+    return max(0, -expoente) if isinstance(expoente, int) else CASAS_PADRAO
+
+
+def casas_de_exchange_info(dados: dict) -> dict[str, int]:
+    """símbolo -> casas decimais, a partir da resposta de /fapi/v1/exchangeInfo. Função pura
+    (recebe o JSON já baixado) pra ser testável sem rede. Símbolo sem PRICE_FILTER é ignorado."""
+    casas: dict[str, int] = {}
+    for simbolo in dados.get("symbols", []):
+        nome = simbolo.get("symbol")
+        tick = next((f.get("tickSize") for f in simbolo.get("filters", [])
+                     if f.get("filterType") == "PRICE_FILTER"), None)
+        if isinstance(nome, str) and tick is not None:
+            casas[nome] = casas_do_tick(tick)
+    return casas
+
+
 class Ativo:
     """Estado de um par: RSI incremental + últimas velas 5m fechadas (reconstroem a vela 15m)."""
 
@@ -282,6 +319,63 @@ def _get_json(caminho: str, **params):
 
 def _vela_de_kline(k: list) -> Vela:
     return Vela(int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]))
+
+
+_casas_binance: dict[str, int] | None = None  # memória de processo, preenchida na 1ª consulta
+
+
+def baixar_casas_decimais() -> dict[str, int]:
+    """Casas decimais de TODOS os pares de Futuros, direto da Binance (~900 símbolos, alguns MB).
+    Nunca levanta exceção: sem internet (ou com a Binance fora do ar) devolve {} e quem chamou
+    cai no padrão — o app tem que abrir de qualquer jeito, e uma casa decimal a mais no preço
+    nunca é motivo pra impedir o cliente de monitorar.
+
+    O resultado fica guardado no processo (só o sucesso; falha é sempre retentada) porque a
+    janela dispara esta consulta numa thread de fundo ao abrir, justamente pra que o clique em
+    "Iniciar" não espere pelo download."""
+    global _casas_binance
+    if _casas_binance is not None:
+        return _casas_binance
+    try:
+        _casas_binance = casas_de_exchange_info(_get_json("/fapi/v1/exchangeInfo"))
+        return _casas_binance
+    except Exception as e:  # rede, timeout, JSON estranho, mudança de formato da Binance…
+        log.warning("Não foi possível consultar as casas decimais na Binance (%s); "
+                    "pares novos vão sair com %d casas.", type(e).__name__, CASAS_PADRAO)
+        return {}
+
+
+def resolver_pares(simbolos, catalogo: dict[str, int] | None = None) -> dict[str, int]:
+    """Lista de símbolos -> {símbolo: casas decimais}, preservando a ordem pedida (é a ordem das
+    linhas do quadro de situação). Prioridade das casas decimais:
+
+      1. PARES — a tabela que o cliente montou olhando o gráfico, para os 8 pares originais;
+      2. o tickSize da Binance, para qualquer par acrescentado depois (item pedido em 23/09/2026,
+         quando o teto subiu para 16) — assim acrescentar par não exige mexer no código;
+      3. CASAS_PADRAO, se a consulta falhar.
+
+    `catalogo` é injetável pra testar sem rede; None consulta a Binance uma vez só, e só quando
+    existe algum par fora de PARES (quem ficou nos 8 originais não paga a consulta)."""
+    pedidos = [str(s).strip().upper() for s in simbolos if str(s).strip()]
+    if catalogo is None:
+        catalogo = {} if all(s in PARES for s in pedidos) else baixar_casas_decimais()
+    return {s: PARES.get(s, catalogo.get(s, CASAS_PADRAO)) for s in pedidos}
+
+
+def pares_desconhecidos(simbolos, catalogo: dict[str, int] | None = None) -> list[str]:
+    """Os símbolos que a Binance não lista em Futuros USDⓈ-M — quase sempre erro de digitação
+    ("BTCUSD" no lugar de "BTCUSDT") ou par que saiu de linha. Sem isso, um par errado vira uma
+    linha morta no quadro: nunca chega vela, nada explica o porquê, e o cliente fica achando que
+    o app travou.
+
+    Devolve lista vazia quando o catálogo não pôde ser consultado (sem internet): aí é melhor
+    deixar passar e o par não receber dados do que impedir o cliente de iniciar por causa de uma
+    consulta que falhou."""
+    if catalogo is None:
+        catalogo = baixar_casas_decimais()
+    if not catalogo:
+        return []
+    return [s for s in dict.fromkeys(str(x).strip().upper() for x in simbolos) if s and s not in catalogo]
 
 
 class Monitor:
@@ -645,7 +739,7 @@ def main() -> None:
 
     monitor = Monitor(p, ao_avaliar)
     log.info("PoC Alerta Futuros — %d pares · RSI(%d) ≥ %s / ≤ %s · setores %s%% · ajuste ±%s%%",
-             len(PARES), p.rsi_periodo, formatar_num(p.rsi_acima, 0), formatar_num(p.rsi_abaixo, 0),
+             len(monitor.ativos), p.rsi_periodo, formatar_num(p.rsi_acima, 0), formatar_num(p.rsi_abaixo, 0),
              formatar_num(p.setor_pct, 0), formatar_num(p.ajuste_pct))
 
     motor = threading.Thread(target=lambda: asyncio.run(monitor.executar()), daemon=True)

@@ -8,7 +8,10 @@ from datetime import datetime
 
 from campos_formulario import CampoInvalido, parametros_dos_textos
 from alerta_futuros import Parametros
-from componentes import CORES_ESTADO, alturas_setores, estado_do_monitor, posicao_no_eixo, proxima_avaliacao
+from componentes import (
+    CORES_ESTADO, altura_visivel_das_linhas, alturas_setores, estado_do_monitor, posicao_no_eixo,
+    proxima_avaliacao,
+)
 from tema import escala_de, primeira_familia_disponivel
 
 
@@ -63,6 +66,30 @@ class TestProximaAvaliacao(unittest.TestCase):
 
     def test_vira_o_dia(self):
         self.assertEqual(proxima_avaliacao(datetime(2026, 9, 22, 23, 50)), datetime(2026, 9, 23, 0, 0))
+
+
+class TestAlturaVisivelDasLinhas(unittest.TestCase):
+    """Quanto do quadro de situação aparece sem rolagem (teto de 16 pares, 23/09/2026).
+    Medidas de projeto: linha 25 px, respiro do rodapé 8 px."""
+
+    def test_sem_limite_mostra_tudo_e_nao_rola(self):
+        self.assertEqual(altura_visivel_das_linhas(16, 25, 8, None), (408, False))
+
+    def test_cabendo_na_altura_disponivel_nao_rola(self):
+        self.assertEqual(altura_visivel_das_linhas(8, 25, 8, 300), (208, False))
+
+    def test_no_limite_exato_ainda_nao_rola(self):
+        self.assertEqual(altura_visivel_das_linhas(8, 25, 8, 208), (208, False))
+
+    def test_nao_cabendo_corta_em_linha_inteira_e_rola(self):
+        # 146 px dão 5 linhas de 25; a sobra de 21 px seria uma fatia de linha na borda
+        self.assertEqual(altura_visivel_das_linhas(16, 25, 8, 146), (125, True))
+
+    def test_altura_minuscula_ainda_mostra_uma_linha(self):
+        self.assertEqual(altura_visivel_das_linhas(16, 25, 8, 10), (25, True))
+
+    def test_sem_pares_nao_rola(self):
+        self.assertEqual(altura_visivel_das_linhas(0, 25, 8, 300), (8, False))
 
 
 class TestTema(unittest.TestCase):

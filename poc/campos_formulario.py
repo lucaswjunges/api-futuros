@@ -10,12 +10,18 @@ lógica pura do projeto (RSI, setores, cruzamento).
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from alerta_futuros import Parametros
 
 # Ordem em que os campos aparecem na janela (Seção 5 da proposta, Opção B).
 CAMPOS = ("rsi_acima", "rsi_abaixo", "setor_pct", "tamanho_min_pct", "ajuste_pct")
+
+# Separadores aceitos no campo de pares: vírgula, ponto e vírgula, barra ou qualquer espaço.
+# O cliente pode colar a lista do jeito que tiver na mão (de um e-mail, de uma planilha) sem
+# ter que arrumar a pontuação — e "btc usdt" separado por espaço vira dois pares, não um.
+_SEPARADORES = re.compile(r"[,;/\s]+")
 
 ROTULOS = {
     "rsi_acima": "RSI — limite Acima",
@@ -64,3 +70,16 @@ def parametros_dos_textos(textos: dict[str, str], base: Parametros) -> Parametro
         raise CampoInvalido(f"Campo ausente no formulário: {', '.join(ROTULOS[c] for c in faltando)}.")
     valores = {campo: _numero(textos[campo], campo) for campo in CAMPOS}
     return replace(base, **valores)
+
+
+def pares_do_texto(texto: str) -> list[str]:
+    """"btcusdt, eth usdt-perp" -> ['BTCUSDT', 'ETHUSDT-PERP'] — só separa e normaliza para
+    maiúsculas, sem julgar se o par existe (isso é papel de configuracao.validar_pares, que é
+    quem monta a mensagem de erro da janela). Duplicatas são preservadas de propósito: quem
+    valida precisa enxergá-las para poder avisar."""
+    return [pedaco.upper() for pedaco in _SEPARADORES.split(texto.strip()) if pedaco]
+
+
+def texto_dos_pares(pares) -> str:
+    """Lista de pares como o cliente vê e edita no campo da janela."""
+    return " ".join(pares)

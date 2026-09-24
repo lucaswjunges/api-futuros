@@ -22,6 +22,7 @@ python alerta_futuros.py --demo                 # pop-ups de exemplo, sem rede (
 python janela.py                                # janela de configuração (Opção B) — CSV em logs/, ícone na bandeja
 python janela.py --minimizado                   # mesma janela, já minimizada na bandeja (usado pelo início automático)
 python queda_simulada_ao_vivo.py                # E2E: derruba a conexão na virada da vela e confere a recuperação (2–7 min)
+xvfb-run -s "-screen 0 1366x768x24" python smoke_janela.py --pares 16   # smoke visual: layout/rolagem numa tela dada
 
 # Empacotamento (.exe) — só no Windows, ver "Empacotar o .exe" no poc/README.md
 pip install -r requirements-dev.txt
@@ -50,6 +51,26 @@ Fluxo: REST aquece o estado → WebSocket entrega velas → RSI(2) atualiza a **
 - **Rodapé "Conhecer outras versões" (19/09/2026)**: pedido do Hugo/Lucas — link no rodapé da janela de configuração (`janela.py`, `_montar_rodape()`) apontando pra uma futura página de aquisição das Opções A/B e da versão com IA, pra já ir acessível a partir da versão que vai pro cliente agora como MVP mesmo a página em si ainda não existindo. A URL fica em `URL_OUTRAS_VERSOES` (marcada com `TODO`, hoje só um placeholder — `https://www.blumenauti.com.br/` — até o Hugo passar o link definitivo) e o clique é tratado por `abrir_outras_versoes()` (função separada do bind só pra dar pra testar sem `tk.Tk()`, ver `test_janela.py`). Também documentado no material do cliente (`poc/GUIA-INSTALACAO-CLIENTE.md`), por pedido explícito do Hugo de que o link apareça tanto no app quanto no material de instalação.
   - **Bug pego no build de teste do PyInstaller, corrigido no mesmo dia**: a primeira versão criava o `Frame` do rodapé com `pady=(0, 10)` — tupla assimétrica, que só é válida no gerenciador de geometria (`.pack`/`.grid`), não no construtor do widget. `tk.Frame(..., pady=(0, 10))` levanta `_tkinter.TclError: bad screen distance "0 10"` assim que a janela de verdade é montada. Escapou dos testes automatizados porque nenhum deles chega a montar um `tk.Tk()` real (só testam lógica pura, ver docstring de `test_janela.py`) — só apareceu rodando o `.exe`/script de verdade. Corrigido movendo o `pady=(0, 10)` do construtor do `Frame` pro `.pack()`.
 - **Visual (redesenho de 22/09/2026, branch `feature/janela-configuracao`)**: `poc/tema.py` (paleta, fontes, DPI, `retangulo_arredondado`) e `poc/componentes.py` (`Indicador`, `DiagramaVela15`, `PainelPares` + funções puras testadas em `test_componentes.py`). Decisões: azul-marinho + dourado da marca (ícone da bandeja e capa da proposta) — dourado é o único destaque de interface (botão principal, foco); verde `#0ECB81`/vermelho `#F6465D` são as cores de vela da Binance e ficam **reservados aos sinais** (marcador do RSI na faixa, coluna Sinal, linha tingida, pop-up) — por isso os botões Iniciar/Parar deixaram de ser verde/vermelho. Números em **Bahnschrift** (DIN, vem no Windows 10/11) e texto em Segoe UI, com fallback em `Helvetica` fora do Windows (`Tema` resolve por `tkfont.families`). A regra aparece como frases com os números como lacunas; o diagrama da vela e a régua de RSI do quadro se redesenham a cada tecla (`_ao_editar`). Quadro de situação é um `Canvas` (não mais `ttk.Treeview`): eixo 0–100 por par, faixas Abaixo/Acima tingidas, marcador colorido só quando a faixa é verdadeira, coluna **Sinal** com o último W/Z. `CampoInvalido.campo` permite destacar o campo errado em vermelho. **DPI**: `tema.preparar_dpi()` (SetProcessDpiAwareness) roda antes do `tk.Tk()` em `janela.main()` e no `--demo`; toda medida em pixel passa por `Tema.px()` — **ainda não testado num Windows a 125%/150%** (o sandbox é Linux); se algo sair desproporcional, é a primeira coisa a desligar. Pop-up: cantos arredondados via `-transparentcolor` (só Windows; fora dele fica retângulo), barra que esvazia nos 10 s, sem eyebrow em caixa alta. Capturas antes/depois em `poc/evidencias/visual/` (feitas no Xvfb a 100 dpi com fonte reserva — no Windows fica um pouco mais compacto). `proposta/popups-poc.png` continua sendo a captura antiga: a proposta já foi enviada, não foi regenerada.
+
+- **Pares acompanhados: até 16, escolhidos pelo cliente (23/09/2026)**. Antes eram 8 fixos em
+  `PARES`. Agora `LIMITE_PARES = 16`, a lista mora em `Configuracao.pares` (salva no `config.json`,
+  campo "Pares acompanhados" na janela) e `Monitor` recebe o dicionário já resolvido por
+  `resolver_pares()`. **Casas decimais**: `PARES` continua mandando nos 8 originais (é a tabela que
+  o cliente montou olhando o gráfico) e os pares novos saem do `tickSize` do `/fapi/v1/exchangeInfo`
+  — **não** do `pricePrecision`, que daria 4 casas no SOLUSDT e 6 no DOGEUSDT. A consulta é aquecida
+  numa thread ao abrir a janela (`_aquecer_casas_decimais`) e memorizada no processo, senão o clique
+  em "Iniciar" esperaria alguns MB de download. `pares_desconhecidos()` recusa no "Iniciar" símbolo
+  que a Binance não lista (erro de digitação, ou par que saiu de linha — o MATICUSDT, que aparecia
+  nos exemplos, é exatamente esse caso: sem a checagem ele virava uma linha com RSI 100 fixo); sem
+  internet a checagem é pulada em vez de travar o app.
+- **Layout da janela com 16 pares**: `LARGURA_MIN_LADO_A_LADO = 1280` — em tela larga a janela vira
+  duas colunas (regra à esquerda, quadro à direita, ~1150×550 px, tudo à vista sem rolar); em tela
+  estreita volta ao empilhado e o quadro ganha rolagem. `altura_maxima_do_quadro()` (janela.py) +
+  `altura_visivel_das_linhas()` (componentes.py) garantem que a janela **nunca** passe da tela — o
+  risco real era o quadro de 16 linhas empurrar os botões Iniciar/Parar para fora da borda de baixo.
+  Por isso `PainelPares` virou um `tk.Frame` com **dois** Canvas (cabeçalho parado + corpo que rola):
+  rolando um Canvas único, a régua do RSI subiria junto e o cliente perderia a legenda do eixo.
+  Capturas: `poc/evidencias/visual/16-pares-lado-a-lado.png` e `16-pares-empilhado-rolagem.png`.
 
 ## Regra de negócio e decisões já tomadas
 
