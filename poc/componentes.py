@@ -71,6 +71,20 @@ def proxima_avaliacao(agora: datetime) -> datetime:
     return base.replace(minute=0) + timedelta(minutes=minutos)
 
 
+def fracao_do_intervalo(agora: datetime) -> float:
+    """Quanto do intervalo de 15 minutos atual já passou (0.0 logo após :00/:15/:30/:45, perto de
+    1.0 logo antes do próximo). É o que a barra de espera mostra com o monitor conectado: o tempo
+    até a próxima avaliação — NUNCA a chance de sair um sinal."""
+    segundos = (agora.minute % 15) * 60 + agora.second + agora.microsecond / 1e6
+    return min(max(segundos / 900.0, 0.0), 1.0)
+
+
+def contagem_regressiva(agora: datetime, alvo: datetime) -> str:
+    """'mm:ss' até `alvo` (nunca negativo)."""
+    restante = max(0, int((alvo - agora).total_seconds()))
+    return f"{restante // 60:02d}:{restante % 60:02d}"
+
+
 def altura_visivel_das_linhas(n_pares: int, altura_linha: int, rodape: int,
                               altura_max: int | None) -> tuple[int, bool]:
     """(altura em px da área de linhas, precisa de rolagem?) do quadro de situação.
@@ -334,7 +348,10 @@ class PainelPares(tk.Frame):
             corpo.itemconfigure(itens["sinal"], text=f"{alvo} {av.alvo_texto}", fill=cor)
             corpo.itemconfigure(itens["fundo"], fill=VERDE_LINHA if av.sinal == "X" else VERMELHO_LINHA)
         else:
-            corpo.itemconfigure(itens["sinal"], text="")
+            # "sem sinal" escrito, e não a célula vazia: vazia parece que o par nem foi avaliado. É a
+            # resposta à dúvida mais comum no teste de usabilidade (21/09/2026) — "passou o
+            # fechamento e não apareceu nada, travou?".
+            corpo.itemconfigure(itens["sinal"], text="sem sinal", fill=TEXTO_APAGADO)
             corpo.itemconfigure(itens["fundo"], fill="")
         corpo.itemconfigure(itens["fechamento"], text=av.fechamento_texto, fill=TEXTO)
         try:
@@ -342,3 +359,78 @@ class PainelPares(tk.Frame):
         except (OverflowError, OSError, ValueError):  # nunca deixa uma falha de formatação derrubar a janela
             hora = "—"
         corpo.itemconfigure(itens["hora"], text=hora, fill=TEXTO_FRACO)
+
+
+class BarraEspera(tk.Canvas):
+    """Barra fina logo abaixo do status: mostra que o app está trabalhando mesmo quando o quadro
+    não muda (definido no teste de usabilidade de 21/09/2026 e reintroduzido em 24/09/2026).
+
+    - conectando/reconectando: um trecho dourado corre de um lado pro outro (animação);
+    - conectado: a barra enche em ciano ao longo dos 15 minutos até a próxima avaliação;
+    - parado: só o trilho.
+    "Reduzir movimento" (na janela) troca a animação por barra parada — o texto de status continua
+    dizendo a mesma coisa, então nada de informação depende do movimento."""
+
+    ALTURA, PASSO_MS, TRECHO = 5, 40, 0.28  # px de projeto; intervalo da animação; largura do trecho
+
+    def __init__(self, master, tema: Tema):
+        px = tema.px
+        super().__init__(master, height=px(self.ALTURA), bg=FUNDO, highlightthickness=0, bd=0)
+        self._trilho = self.create_rectangle(0, 0, 0, 0, fill=TRILHO, outline="")
+        self._barra = self.create_rectangle(0, 0, 0, 0, fill=CIANO, outline="")
+        self.modo = "parado"
+        self._fracao = 0.0
+        self._fase = 0.0
+        self._job: str | None = None
+        self.bind("<Configure>", lambda _e: self._desenhar())
+
+    def animar(self) -> None:
+        if self.modo == "animando":
+            return
+        self.modo = "animando"
+        self._tick()
+
+    def progresso(self, fracao: float) -> None:
+        self._parar_animacao()
+        self.modo, self._fracao = "progresso", min(max(fracao, 0.0), 1.0)
+        self._desenhar()
+
+    def parado(self) -> None:
+        self._parar_animacao()
+        self.modo = "parado"
+        self._desenhar()
+
+    def _parar_animacao(self) -> None:
+        if self._job is not None:
+            try:
+                self.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+
+    def _tick(self) -> None:
+        self._job = None
+        if self.modo != "animando":
+            return
+        self._fase = (self._fase + 0.018) % (1.0 + self.TRECHO)
+        self._desenhar()
+        self._job = self.after(self.PASSO_MS, self._tick)
+
+    def _desenhar(self) -> None:
+        largura, altura = self.winfo_width(), int(self.cget("height"))
+        if largura <= 1:
+            return
+        self.coords(self._trilho, 0, 0, largura, altura)
+        if self.modo == "animando":
+            x0 = (self._fase - self.TRECHO) * largura
+            self.coords(self._barra, max(0, x0), 0, min(largura, x0 + self.TRECHO * largura), altura)
+            self.itemconfigure(self._barra, fill=OURO, state="normal")
+        elif self.modo == "progresso":
+            self.coords(self._barra, 0, 0, self._fracao * largura, altura)
+            self.itemconfigure(self._barra, fill=CIANO, state="normal")
+        else:
+            self.itemconfigure(self._barra, state="hidden")
+
+    def destroy(self) -> None:
+        self._parar_animacao()
+        super().destroy()

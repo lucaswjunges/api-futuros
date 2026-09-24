@@ -64,7 +64,20 @@ Monitoramento**, **Parar Monitoramento** e **Sair** (só "Sair" encerra o progra
 ## 5. Registro de sinais (CSV)
 
 Toda vez que o programa avalia um fechamento, ele grava uma linha num arquivo de planilha
-(CSV) numa pasta `logs`, ao lado do programa — pra você conferir depois no Excel, se quiser.
+(CSV) — pra você conferir depois no Excel, se quiser. Para achar os arquivos, clique em
+**"Abrir registros"**, no rodapé da janela: abre a pasta direto.
+
+## 5.1. Está funcionando? Ajuda e exemplo de alerta
+
+O bloco de status embaixo dos botões diz o que está acontecendo ("Conectando…", "Monitoramento
+ativo", "Sem conexão · tentando de novo") e a hora da próxima avaliação. A barrinha anima
+enquanto conecta e, depois, vai enchendo até o próximo fechamento de 15 minutos — enquanto ela
+anda, o programa está trabalhando, mesmo que o quadro não mude. (Se o movimento incomodar, marque
+"Reduzir movimento".) Um par avaliado sem sinal mostra **"sem sinal"** — é normal.
+
+**"Ver exemplo de alerta"** mostra um aviso de mentira (marcado SIMULAÇÃO), no mesmo canto e do
+mesmo jeito que um real, pra você reconhecer quando vier. **"Como usar"**, no rodapé, abre esta
+explicação dentro do próprio programa.
 
 ## 6. Conhecer outras versões
 

@@ -46,28 +46,119 @@ import os
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from datetime import datetime
 from pathlib import Path
+from tkinter import messagebox
 
 from alerta_futuros import (
-    ATRASO_MAX_POPUP_MS, LIMITE_PARES, PARES, Avaliacao, Monitor, Parametros, Popups, Registro,
-    baixar_casas_decimais, pares_desconhecidos, resolver_pares,
+    ATRASO_MAX_POPUP_MS, LIMITE_PARES, MS_5M, PARES, Avaliacao, Monitor, Parametros, Popups, Registro,
+    _exemplos, baixar_casas_decimais, pares_desconhecidos, resolver_pares,
 )
 from campos_formulario import (
     CAMPOS, CampoInvalido, pares_do_texto, parametros_dos_textos, texto_dos_pares, textos_de,
 )
-from componentes import DiagramaVela15, Indicador, PainelPares, estado_do_monitor, proxima_avaliacao
-from configuracao import Configuracao, carregar, salvar, validar, validar_pares
+from componentes import (
+    BarraEspera, DiagramaVela15, Indicador, PainelPares, contagem_regressiva, estado_do_monitor,
+    fracao_do_intervalo, proxima_avaliacao,
+)
+from configuracao import Configuracao, carregar, pasta_configuracao, salvar, validar, validar_pares
 from tema import (
-    BORDA, CAMINHO_ICONE, CAMPO, FUNDO, LINHA, OURO, OURO_ATIVO, OURO_TEXTO, PAINEL, TEXTO, TEXTO_APAGADO,
-    TEXTO_FRACO, VERMELHO, Tema, preparar_dpi,
+    BORDA, CAMINHO_ICONE, CAMPO, CIANO, FUNDO, LINHA, OURO, OURO_ATIVO, OURO_TEXTO, PAINEL, TEXTO,
+    TEXTO_APAGADO, TEXTO_FRACO, VERMELHO, Tema, preparar_dpi,
 )
 
 log = logging.getLogger("alerta.janela")
 
-PASTA_LOGS = Path(__file__).with_name("logs")
+# Onde o histórico CSV é gravado. No .exe NÃO pode ser ao lado de __file__: o PyInstaller
+# --onefile extrai o código numa pasta temporária (_MEIxxxx) que é apagada quando o app fecha — o
+# histórico sumia a cada "Sair". Achado no teste de usabilidade de 21/09/2026; a correção ficou só
+# numa branch local e foi reintroduzida aqui em 24/09/2026. No .exe vai para
+# %APPDATA%\AlertaFuturos\logs, junto da configuração; rodando do código-fonte continua em poc/logs.
+def _pasta_logs() -> Path:
+    if getattr(sys, "frozen", False):
+        return pasta_configuracao() / "logs"
+    return Path(__file__).with_name("logs")
+
+
+PASTA_LOGS = _pasta_logs()
+
+# Depois de quantos segundos "Conectando…" vira um aviso de demora (com o que conferir).
+SEGUNDOS_CONEXAO_DEMORADA = 30
+
+
+def mensagens_de_status(chave: str, n_pares: int, ultima: str | None, demorando: bool,
+                        reconexoes: int) -> tuple[str, str]:
+    """(título, orientação) do bloco de status, a partir da chave de estado_do_monitor().
+
+    Existe porque o indicador sozinho ("Conectado") não responde à dúvida que o teste de
+    usabilidade de 21/09/2026 mostrou ser a principal: "está funcionando ou travou?". O quadro só
+    muda nos fechamentos de 15 min e pode passar horas sem sinal — então o texto diz, em cada
+    estado, o que está acontecendo e o que esperar. Nunca promete sinal."""
+    pares = "1 par" if n_pares == 1 else f"{n_pares} pares"
+    if chave == "conectado":
+        if ultima is None:
+            return (f"Monitoramento ativo · {pares}",
+                    "Tudo pronto. O quadro é preenchido no próximo fechamento de 15 minutos. "
+                    "Um aviso só aparece se a regra acontecer.")
+        return (f"Monitoramento ativo · {pares}",
+                f"Última avaliação às {ultima}. \u201cSem sinal\u201d é normal — o aviso só aparece "
+                "quando as duas condições coincidem.")
+    if chave == "reconectando":
+        return ("Sem conexão · tentando de novo",
+                f"Confira a internet. A reconexão é automática ({reconexoes} tentativa(s)); os "
+                "fechamentos perdidos são avaliados quando ela voltar.")
+    if chave == "conectando":
+        if demorando:
+            return ("A conexão está demorando",
+                    "Ainda buscando os dados da Binance. Confira a internet; se quiser, clique em "
+                    "Parar e depois em Iniciar de novo.")
+        return ("Conectando e preparando os dados…",
+                "Buscando o histórico recente de cada par na Binance. Leva alguns segundos.")
+    if chave == "encerrado":
+        return ("Monitoramento interrompido",
+                "A sessão terminou por uma falha (veja a mensagem abaixo). Clique em Iniciar para "
+                "tentar de novo.")
+    return ("Pronto para começar",
+            "Confira os valores (ou mantenha os combinados) e clique em Iniciar monitoramento.")
+
+
+def executar_motor(monitor: Monitor, erros: "queue.Queue[str]") -> None:
+    """Corpo da thread do motor. Uma exceção aqui antes só aparecia no console — sem console (o
+    .exe é --windowed), a janela ficava com o botão "Parar" aceso e nada acontecendo. Agora a
+    falha vira mensagem pra janela mostrar, e a janela libera o Iniciar de novo."""
+    try:
+        asyncio.run(monitor.executar())
+    except Exception:
+        log.exception("Falha no monitoramento")
+        erros.put("O monitoramento foi interrompido por uma falha inesperada. "
+                  "Clique em Iniciar para tentar de novo; se repetir, fale com a Blumenau TI.")
+
+TEXTO_COMO_USAR = """O que o aplicativo faz
+Acompanha dados públicos dos pares da Binance Futuros que estão na lista e mostra um aviso no canto da tela quando a sua regra acontece. Não pede senha, não acessa conta e não compra nem vende nada.
+
+Cliquei em Iniciar. E agora?
+Primeiro ele conecta e busca o histórico recente de cada par (alguns segundos). Quando aparecer "Monitoramento ativo", é só aguardar: a regra é conferida nos fechamentos de 15 minutos — :00, :15, :30 e :45. O quadro começa vazio e se preenche no primeiro fechamento.
+
+Passou um fechamento e não apareceu aviso. Travou?
+Provavelmente não. Avaliar não é o mesmo que dar sinal: se as duas condições não coincidirem, a linha do par mostra "sem sinal". Confira o status, a hora da última avaliação e a barra — enquanto ela avança até o próximo fechamento, o app está trabalhando. Horas sem nenhum aviso podem ser normais.
+
+Como é um aviso?
+Clique em "Ver exemplo de alerta". O exemplo é uma simulação: aparece no mesmo canto e do mesmo jeito que um aviso real, mas não entra no histórico. W (verde) = alvo acima do fechamento; Z (vermelho) = alvo abaixo.
+
+Trocar ou acrescentar moedas
+No campo "Pares acompanhados", escreva os símbolos como aparecem na Binance (ex.: BTCUSDT), separados por espaço ou vírgula — até 16. Vale no próximo Iniciar. Se um símbolo não existir em Futuros, a janela avisa qual é.
+
+Posso fechar a janela?
+Sim. O X só esconde a janela: o app continua rodando, com o ícone perto do relógio (às vezes dentro da setinha ^). Clique com o botão direito nele para abrir de novo ou para Sair. Mantenha o computador ligado, sem suspensão e com internet.
+
+Histórico
+Cada fechamento avaliado vai para um arquivo CSV (abre no Excel). O botão "Abrir registros" mostra a pasta.
+
+Os avisos não são recomendação de investimento; as decisões continuam sendo suas.
+Dúvidas: Blumenau TI · WhatsApp (47) 98867-7798"""
 
 # O ícone de bandeja (pystray) sobe um laço GTK que, fora do Windows, compete com o laço de
 # eventos do Tk e faz os botões pararem de responder a cliques (relato do Lucas no Ubuntu 26 em
@@ -151,10 +242,24 @@ class Aplicativo:
         # últimos parâmetros coerentes digitados: é o que o diagrama e a régua desenham enquanto o
         # usuário edita (um campo pela metade não apaga o desenho, só não o atualiza)
         self._parametros_desenho: Parametros = self.config.parametros
+        # estado da sessão, lido pelo laço _verificar_fila
+        self.erros_motor: "queue.Queue[str]" = queue.Queue()
+        self.sessao_ativa = False
+        self.inicio_sessao = 0.0
+        self.avaliacoes = 0
+        self.sinais = 0
+        self.ultima_avaliacao: str | None = None
+        self.reduzir_movimento = tk.BooleanVar(value=False)
+        self.aviso_bandeja_mostrado = False
+        self.janela_ajuda: tk.Toplevel | None = None
+        self._laco: str | None = None
 
         self._montar(root)
         self.popups = Popups(root, self.config.parametros.popup_segundos)
         self._configurar_bandeja(root)
+        # o laço roda sempre (não só com o motor vivo): é ele que percebe o motor morrer sozinho e
+        # devolve a janela ao estado "pode iniciar de novo"
+        self._laco = self.root.after(200, self._verificar_fila)
 
     def _configurar_bandeja(self, root: tk.Tk) -> None:
         if not BANDEJA_HABILITADA:
@@ -197,6 +302,17 @@ class Aplicativo:
         self.root.lift()
 
     def _minimizar_para_bandeja(self) -> None:
+        """Na primeira vez explica pra onde a janela foi — no teste de usabilidade (21/09/2026) o
+        X sem explicação foi lido como "fechei o programa", e o ícone na setinha ^ não foi achado."""
+        if not self.aviso_bandeja_mostrado:
+            self.aviso_bandeja_mostrado = True
+            messagebox.showinfo(
+                "O Alerta Futuros continua rodando",
+                "Fechar esta janela não desliga o aplicativo — o monitoramento continua.\n\n"
+                "Para abrir de novo: clique com o botão direito no ícone da Blumenau TI perto do "
+                "relógio (ele pode estar dentro da setinha ^) e escolha Abrir.\n\n"
+                "Para desligar de vez: use Sair, no mesmo menu ou no rodapé da janela.",
+                parent=self.root)
         self.root.withdraw()
 
     # ───────────────────────────── montagem da janela ─────────────────────────────
@@ -226,11 +342,17 @@ class Aplicativo:
         self._montar_cabecalho(self.coluna_esquerda)
         self._montar_regra(self.coluna_esquerda)
         self._montar_acoes(self.coluna_esquerda)
+        # bloco de status: empilhado, logo abaixo dos botões; lado a lado, embaixo do quadro na
+        # coluna da direita — a esquerda já ocupa quase toda a altura de um notebook de 768 px
+        if not self.lado_a_lado:
+            self._montar_status(corpo)
         # o rodapé é montado antes do quadro de propósito: o quadro precisa saber quanto de
         # altura sobra na tela, e isso só dá pra medir com todo o resto da janela já montado
         # (ver _montar_quadro_situacao). No empilhado ele entra no lugar certo com pack(before=),
         # e por isso precisa morar no MESMO pai do quadro — pack(before=) não atravessa pais.
         self._montar_rodape(root if self.lado_a_lado else corpo)
+        if self.lado_a_lado:
+            self._montar_status(self.coluna_direita)
         self._montar_quadro_situacao(root)
         self._aquecer_casas_decimais()
 
@@ -264,7 +386,7 @@ class Aplicativo:
     def _montar_regra(self, root: tk.Misc) -> None:
         px, tema = self.tema.px, self.tema
         textos = textos_de(self.config.parametros)
-        regra = tk.Frame(root, bg=FUNDO, padx=px(20))
+        regra = self.frame_regra = tk.Frame(root, bg=FUNDO, padx=px(20))
         regra.pack(fill="x", pady=(px(12), 0))
 
         self._titulo(regra, "RSI(2) no fechamento da vela de 5 minutos")
@@ -355,8 +477,13 @@ class Aplicativo:
 
     def _montar_acoes(self, root: tk.Misc) -> None:
         px, tema = self.tema.px, self.tema
-        acoes = tk.Frame(root, bg=FUNDO, padx=px(20))
+        acoes = self.frame_acoes = tk.Frame(root, bg=FUNDO, padx=px(20))
         acoes.pack(fill="x", pady=(px(14), 0))
+        # empilhado (tela < LARGURA_MIN_LADO_A_LADO), enquanto o monitor roda, a regra — travada
+        # mesmo — dá lugar a uma linha de resumo: é o que faz o quadro e o rodapé caberem num
+        # 1024x768 (medido: 966 px de janela com a regra aberta). Ver _recolher_regra.
+        self.rotulo_regra_resumida = tk.Label(root, text="", bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(9),
+                                              anchor="w", justify="left", padx=px(20))
         opcoes = dict(relief="flat", bd=0, padx=px(16), pady=px(6), font=tema.texto(10, "bold"),
                       highlightthickness=1, highlightcolor=TEXTO)
         self.botao_iniciar = tk.Button(acoes, text="Iniciar monitoramento", command=self.iniciar, **opcoes)
@@ -364,10 +491,49 @@ class Aplicativo:
         self.botao_parar = tk.Button(acoes, text="Parar monitoramento", command=self.parar, **opcoes)
         self.botao_parar.pack(side="left", padx=(px(10), 0))
         self._estilizar_botoes(rodando=False)
+        exemplo = tk.Label(acoes, text="Ver exemplo de alerta", bg=FUNDO, fg=TEXTO_FRACO,
+                           font=tema.texto(9, "underline"), cursor="hand2")
+        exemplo.pack(side="right")
+        exemplo.bind("<Button-1>", lambda _evt: self.mostrar_exemplo())
 
         self.rotulo_erro = tk.Label(root, text="", bg=FUNDO, fg=VERMELHO, font=tema.texto(9),
                                     wraplength=px(392), justify="left", anchor="w")
         self.rotulo_erro.pack(fill="x", padx=px(20), pady=(px(4), 0))
+
+    def _montar_status(self, root: tk.Misc) -> None:
+        """Bloco "o que está acontecendo agora": título, orientação, barra de espera e o resumo da
+        sessão. Veio do teste de usabilidade de 21/09/2026 (branch local nunca publicada) e foi
+        reintroduzido em 24/09/2026 por cima do redesenho visual e dos 16 pares."""
+        px, tema = self.tema.px, self.tema
+        caixa = self.caixa_status = tk.Frame(root, bg=PAINEL, padx=px(14), pady=px(10), highlightthickness=1,
+                                             highlightbackground=LINHA)
+        if self.lado_a_lado:
+            caixa.pack(fill="x", pady=(px(10), 0))
+        else:
+            caixa.configure(pady=px(7))
+            caixa.pack(fill="x", padx=px(20), pady=(px(10), 0))
+        largura_texto = px(580)  # as duas disposições têm ~600 px úteis nesta caixa
+        titulo, orientacao = mensagens_de_status("parado", len(self.config.pares), None, False, 0)
+        self.rotulo_status = tk.Label(caixa, text=titulo, bg=PAINEL, fg=TEXTO, font=tema.texto(11, "bold"),
+                                      anchor="w", justify="left")
+        self.rotulo_status.pack(fill="x")
+        self.rotulo_orientacao = tk.Label(caixa, text=orientacao, bg=PAINEL, fg=TEXTO_FRACO, font=tema.texto(9),
+                                          anchor="w", justify="left", wraplength=largura_texto)
+        self.rotulo_orientacao.pack(fill="x", pady=(px(3), 0))
+        self.barra_espera = BarraEspera(caixa, tema)
+        self.barra_espera.configure(bg=PAINEL)
+        self.barra_espera.pack(fill="x", pady=(px(9), px(5)))
+        linha = tk.Frame(caixa, bg=PAINEL)
+        linha.pack(fill="x")
+        self.rotulo_proxima = tk.Label(linha, text="Avaliações às :00, :15, :30 e :45.", bg=PAINEL, fg=TEXTO_FRACO,
+                                       font=tema.texto(9), anchor="w")
+        self.rotulo_proxima.pack(side="left")
+        tk.Checkbutton(linha, text="Reduzir movimento", variable=self.reduzir_movimento,
+                       command=self._atualizar_barra, bg=PAINEL, fg=TEXTO_APAGADO, selectcolor=CAMPO,
+                       activebackground=PAINEL, activeforeground=TEXTO, highlightthickness=0,
+                       font=tema.texto(8)).pack(side="right")
+        self.rotulo_resumo = tk.Label(caixa, text="", bg=PAINEL, fg=TEXTO_APAGADO, font=tema.texto(8), anchor="w")
+        self.rotulo_resumo.pack(fill="x", pady=(px(2), 0))
 
     def _estilizar_botoes(self, rodando: bool) -> None:
         """Só um botão "chama" por vez — o dourado é o que faz sentido apertar agora."""
@@ -385,12 +551,15 @@ class Aplicativo:
         root.update_idletasks()  # sem isso winfo_reqheight() ainda devolve o "1" inicial do Tk
         # Empilhado, o quadro divide a altura com tudo que já está montado; lado a lado ele tem a
         # coluna inteira, e só o rodapé (que atravessa as duas) desconta.
-        resto = self.rodape.winfo_reqheight() + px(24) if self.lado_a_lado else root.winfo_reqheight()
+        if self.lado_a_lado:
+            resto = self.rodape.winfo_reqheight() + self.caixa_status.winfo_reqheight() + px(34)
+        else:
+            resto = root.winfo_reqheight()
         altura_max = altura_maxima_do_quadro(root.winfo_screenheight(), resto)
         p = self.config.parametros
         self.painel = PainelPares(self.coluna_direita, self.tema, self.config.pares,
                                   p.rsi_abaixo, p.rsi_acima, altura_max)
-        posicao = {} if self.lado_a_lado else {"before": self.rodape}
+        posicao = {"before": self.caixa_status} if self.lado_a_lado else {"before": self.rodape}
         self.painel.pack(fill="x", pady=(px(10), 0), **posicao)
 
     def _reconstruir_quadro(self) -> None:
@@ -418,14 +587,67 @@ class Aplicativo:
         self.rotulo_rodape = tk.Label(rodape, text=self._texto_rodape_parado(), bg=FUNDO, fg=TEXTO_APAGADO,
                                       font=tema.texto(9))
         self.rotulo_rodape.pack(side="left")
-        link = tk.Label(rodape, text="Conhecer outras versões", bg=FUNDO, fg=TEXTO_FRACO,
-                        font=tema.texto(9, "underline"), cursor="hand2")
-        link.pack(side="right")
-        link.bind("<Button-1>", lambda _evt: abrir_outras_versoes())
+        # da direita pra esquerda: Sair · outras versões · Abrir registros · Como usar
+        for texto, acao in (("Sair", self.encerrar_de_vez),
+                            ("Conhecer outras versões", abrir_outras_versoes),
+                            ("Abrir registros", self.abrir_registros),
+                            ("Como usar", self.mostrar_ajuda)):
+            link = tk.Label(rodape, text=texto, bg=FUNDO, fg=TEXTO_FRACO,
+                            font=tema.texto(9, "underline"), cursor="hand2")
+            link.pack(side="right", padx=(px(14), 0))
+            link.bind("<Button-1>", lambda _evt, a=acao: a())
 
     @staticmethod
     def _texto_rodape_parado() -> str:
-        return f"Cada fechamento avaliado é gravado na pasta {PASTA_LOGS.name}."
+        return "Histórico em CSV: botão Abrir registros."
+
+    # ───────────────────────────── ajuda, exemplo, registros ─────────────────────────────
+
+    def mostrar_exemplo(self) -> None:
+        """Mostra o MESMO pop-up de um sinal real, no mesmo canto, com o título trocado por
+        "SIMULAÇÃO" — é pra o cliente reconhecer o aviso quando ele vier de verdade. Não passa pela
+        fila nem pelo Registro: não entra no CSV nem nos contadores."""
+        av = _exemplos()[0]
+        self.popups.mostrar(av, titulo="SIMULAÇÃO · exemplo, não é sinal real")
+
+    def mostrar_ajuda(self) -> None:
+        if self.janela_ajuda is not None and self.janela_ajuda.winfo_exists():
+            self.janela_ajuda.deiconify()
+            self.janela_ajuda.lift()
+            return
+        px, tema = self.tema.px, self.tema
+        janela = self.janela_ajuda = tk.Toplevel(self.root)
+        janela.title("Alerta Futuros — Como usar")
+        janela.configure(bg=FUNDO)
+        janela.transient(self.root)
+        texto = tk.Text(janela, wrap="word", bg=FUNDO, fg=TEXTO, font=tema.texto(10), relief="flat", bd=0,
+                        padx=px(18), pady=px(14), width=62, height=26, highlightthickness=0,
+                        spacing1=px(1), spacing3=px(3))
+        barra = tk.Scrollbar(janela, command=texto.yview)
+        texto.configure(yscrollcommand=barra.set)
+        barra.pack(side="right", fill="y")
+        texto.pack(fill="both", expand=True)
+        texto.tag_configure("titulo", font=tema.texto(11, "bold"), foreground=OURO, spacing1=px(10))
+        for bloco in TEXTO_COMO_USAR.split("\n\n"):
+            primeira, _, resto = bloco.partition("\n")
+            if resto:
+                texto.insert("end", primeira + "\n", "titulo")
+                texto.insert("end", resto + "\n")
+            else:
+                texto.insert("end", "\n" + primeira + "\n")
+        texto.config(state="disabled")
+        janela.bind("<Escape>", lambda _e: janela.destroy())
+
+    def abrir_registros(self) -> None:
+        try:
+            PASTA_LOGS.mkdir(parents=True, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(PASTA_LOGS)  # noqa: S606 (abre o Explorer na pasta)
+            else:
+                webbrowser.open(PASTA_LOGS.resolve().as_uri())
+        except OSError as e:
+            log.warning("Não foi possível abrir a pasta de registros: %s", e)
+            self.rotulo_erro.config(text=f"Não foi possível abrir a pasta de registros ({PASTA_LOGS}).")
 
     # ───────────────────────────── ações ─────────────────────────────
 
@@ -472,6 +694,10 @@ class Aplicativo:
         return pares_do_texto(self.entrada_pares.get("1.0", "end"))
 
     def iniciar(self) -> None:
+        if self.thread_motor is not None and self.thread_motor.is_alive():
+            # ainda terminando a sessão anterior (Parar leva até ~1 s pra o motor sair do laço)
+            self.rotulo_erro.config(text="Aguarde um instante: a sessão anterior ainda está sendo finalizada.")
+            return
         self.rotulo_erro.config(text="")
         for campo in CAMPOS:
             self._marcar_erro(campo, False)
@@ -512,27 +738,78 @@ class Aplicativo:
             self._reconstruir_quadro()  # uma linha por par: lista nova = quadro novo
         self.painel.definir_faixas(parametros.rsi_abaixo, parametros.rsi_acima)
 
-        self.registro = Registro(PASTA_LOGS)
+        try:
+            self.registro = Registro(PASTA_LOGS)
+        except OSError as e:
+            log.warning("Não foi possível criar o histórico em %s: %s", PASTA_LOGS, e)
+            self.rotulo_erro.config(text="Não foi possível criar o arquivo de histórico. Confira o espaço em "
+                                         "disco e a permissão da pasta de registros.")
+            return
+        self.fila = queue.Queue()
+        self.erros_motor = queue.Queue()
         self.monitor = Monitor(parametros, construir_ao_avaliar(self.registro, self.fila),
                                resolver_pares(pares))
-        self.thread_motor = threading.Thread(target=lambda: asyncio.run(self.monitor.executar()), daemon=True)
+        self.thread_motor = threading.Thread(target=executar_motor, args=(self.monitor, self.erros_motor),
+                                             daemon=True)
+        self.sessao_ativa = True
+        self.inicio_sessao = time.monotonic()
+        self.avaliacoes = self.sinais = 0
+        self.ultima_avaliacao = None
         self.thread_motor.start()
 
         self._habilitar_campos(False)
+        self._recolher_regra(True)
         self._estilizar_botoes(rodando=True)
         self.indicador.definir("conectando", "Conectando…")
-        self.root.after(200, self._verificar_fila)
+        self._atualizar_status("conectando")
 
     def parar(self) -> None:
+        self.sessao_ativa = False
         if self.monitor:
             self.monitor.parar.set()
+        if self.registro:
+            self.registro.fechar()  # seguro mesmo com o motor gravando: Registro tem lock (7497ac8)
+            self.registro = None
+        self._estilizar_botoes(rodando=False)
+        self._habilitar_campos(True)
+        self._recolher_regra(False)
+        self.indicador.definir("parado", "Parado")
+        self.rotulo_rodape.config(text=self._texto_rodape_parado())
+        self.rotulo_status.config(text="Monitoramento parado", fg=TEXTO)
+        self.rotulo_orientacao.config(text="Nenhum aviso novo será mostrado. Clique em Iniciar para retomar.")
+        self.rotulo_proxima.config(text="Avaliações às :00, :15, :30 e :45.")
+        self.barra_espera.parado()
+
+    def _recolher_regra(self, recolher: bool) -> None:
+        if self.lado_a_lado:
+            return
+        if recolher:
+            p = self.config.parametros
+            num = lambda v: f"{v:g}".replace(".", ",")  # noqa: E731
+            self.rotulo_regra_resumida.config(
+                text=f"Regra: RSI(2) até {num(p.rsi_abaixo)} ou a partir de {num(p.rsi_acima)} · setores "
+                     f"{num(p.setor_pct)}% · alvo {num(p.ajuste_pct)}% — pare o monitoramento para editar.")
+            self.frame_regra.pack_forget()
+            self.rotulo_regra_resumida.pack(fill="x", pady=(self.tema.px(10), 0), before=self.frame_acoes)
+        else:
+            self.rotulo_regra_resumida.pack_forget()
+            self.frame_regra.pack(fill="x", pady=(self.tema.px(12), 0), before=self.frame_acoes)
+
+    def _fim_inesperado(self) -> None:
+        """O motor morreu sem o usuário clicar em Parar: devolve a janela ao estado "pode iniciar",
+        com a explicação no bloco de status e a mensagem de erro (se houver) embaixo."""
+        self.sessao_ativa = False
         if self.registro:
             self.registro.fechar()
             self.registro = None
         self._estilizar_botoes(rodando=False)
         self._habilitar_campos(True)
-        self.indicador.definir("parado", "Parado")
+        self._recolher_regra(False)
+        self.indicador.definir("encerrado", "Encerrado")
+        self._atualizar_status("encerrado")
+        self.rotulo_proxima.config(text="Avaliações às :00, :15, :30 e :45.")
         self.rotulo_rodape.config(text=self._texto_rodape_parado())
+        self.barra_espera.parado()
 
     def _aplicar_inicio_automatico(self) -> None:
         if sys.platform != "win32":
@@ -546,20 +823,76 @@ class Aplicativo:
     # ───────────────────────────── laço de atualização ─────────────────────────────
 
     def _verificar_fila(self) -> None:
+        try:
+            self._processar()
+        except tk.TclError:  # janela sendo destruída no meio do laço
+            return
+        except Exception:  # um erro de exibição nunca pode parar o laço (e com ele os avisos)
+            log.exception("Erro ao atualizar a janela")
+        self._laco = self.root.after(200, self._verificar_fila)
+
+    def _processar(self) -> None:
         while not self.fila.empty():
             av = self.fila.get_nowait()
+            if not self.sessao_ativa:
+                continue  # chegou depois do Parar: não mostra aviso de uma sessão já encerrada
             self.painel.atualizar(av)
+            self.avaliacoes += 1
+            self.sinais += av.sinal is not None
+            try:
+                self.ultima_avaliacao = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
+            except (OverflowError, OSError, ValueError):
+                pass
             if av.sinal and (av.latencia_ms or 0) < ATRASO_MAX_POPUP_MS:
                 self.popups.mostrar(av)
+        while not self.erros_motor.empty():
+            self.rotulo_erro.config(text=self.erros_motor.get_nowait())
 
+        if not self.sessao_ativa or self.monitor is None:
+            return
         motor_vivo = bool(self.thread_motor and self.thread_motor.is_alive())
-        if self.monitor is not None:
-            chave, texto = estado_do_monitor(True, motor_vivo, self.monitor.conectado.is_set(), self.monitor.reconexoes)
-            self.indicador.definir(chave, texto)
-        if motor_vivo:
-            proxima = proxima_avaliacao(datetime.now()).strftime("%H:%M")
-            self.rotulo_rodape.config(text=f"Próxima avaliação às {proxima}.")
-            self.root.after(200, self._verificar_fila)
+        if not motor_vivo:
+            self._fim_inesperado()
+            return
+        chave, texto = estado_do_monitor(True, True, self.monitor.conectado.is_set(), self.monitor.reconexoes)
+        self.indicador.definir(chave, texto)
+        self._atualizar_status(chave)
+
+    def _atualizar_status(self, chave: str) -> None:
+        demorando = time.monotonic() - self.inicio_sessao > SEGUNDOS_CONEXAO_DEMORADA
+        reconexoes = self.monitor.reconexoes if self.monitor else 0
+        titulo, orientacao = mensagens_de_status(chave, len(self.config.pares), self.ultima_avaliacao,
+                                                 demorando, reconexoes)
+        cor = {"conectado": CIANO, "encerrado": VERMELHO, "conectando": OURO, "reconectando": OURO}.get(chave, TEXTO)
+        if chave == "conectando" and not demorando:
+            cor = TEXTO
+        self.rotulo_status.config(text=titulo, fg=cor)
+        self.rotulo_orientacao.config(text=orientacao)
+        if self.sessao_ativa:
+            self.rotulo_resumo.config(text=f"Nesta sessão: {self.avaliacoes} avaliações · {self.sinais} sinais")
+        agora = datetime.now()
+        if chave == "conectado":
+            proxima = proxima_avaliacao(agora)
+            texto = f"Próxima avaliação às {proxima:%H:%M} · em {contagem_regressiva(agora, proxima)}"
+            self.rotulo_proxima.config(text=texto)
+            self.rotulo_rodape.config(text=f"Próxima avaliação às {proxima:%H:%M}.")
+        elif chave in ("conectando", "reconectando"):
+            self.rotulo_proxima.config(text="Previsão da próxima avaliação: assim que conectar.")
+        self._atualizar_barra(chave)
+
+    def _atualizar_barra(self, chave: str | None = None) -> None:
+        """Conectando/reconectando: animação (a não ser com "Reduzir movimento"). Conectado: barra
+        enche até o próximo fechamento de 15 min — o tempo, não a chance de sinal."""
+        if chave is None:
+            chave = self.indicador.chave
+        if not self.sessao_ativa:
+            self.barra_espera.parado()
+        elif chave == "conectado":
+            self.barra_espera.progresso(fracao_do_intervalo(datetime.now()))
+        elif self.reduzir_movimento.get():
+            self.barra_espera.parado()
+        else:
+            self.barra_espera.animar()
 
     def encerrar_de_vez(self) -> None:
         """Sai de verdade: para o monitor, fecha o CSV, derruba o ícone de bandeja (se houver)
@@ -574,6 +907,11 @@ class Aplicativo:
             self.registro = None
         if self.bandeja:
             self.bandeja.parar()
+        if self._laco is not None:
+            try:
+                self.root.after_cancel(self._laco)
+            except tk.TclError:
+                pass
         self.root.destroy()
 
 

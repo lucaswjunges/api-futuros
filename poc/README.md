@@ -27,7 +27,7 @@ python janela.py                       # janela de configuração (Opção B) + 
 python -m unittest -v                  # testes da lógica
 ```
 
-Cada fechamento avaliado é gravado em `logs/fechamentos_*.csv` (RSI, setor, sinal, alvo,
+Cada fechamento avaliado é gravado em `logs/fechamentos_*.csv` (no `.exe`: `%APPDATA%\AlertaFuturos\logs`, botão "Abrir registros") (RSI, setor, sinal, alvo,
 latência) para conferência com o gráfico da Binance.
 
 ## Pares acompanhados (até 16)

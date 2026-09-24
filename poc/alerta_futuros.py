@@ -500,7 +500,7 @@ class Monitor:
 
 # Cores dos sinais (verde de vela da Binance pro W, vermelho pro Z) — fonte única em tema.py,
 # compartilhada com a janela de configuração.
-from tema import BORDA, PAINEL, TEXTO, TEXTO_FRACO, VERDE, VERMELHO, Tema, retangulo_arredondado  # noqa: E402
+from tema import BORDA, OURO, PAINEL, TEXTO, TEXTO_FRACO, VERDE, VERMELHO, Tema, retangulo_arredondado  # noqa: E402
 
 
 class Popups:
@@ -521,7 +521,9 @@ class Popups:
         self.abertos: list = []
         self.tema = Tema(root)
 
-    def mostrar(self, av: Avaliacao) -> None:
+    def mostrar(self, av: Avaliacao, titulo: str = "Alerta Futuros") -> None:
+        """`titulo` só muda no botão "Ver exemplo de alerta" da janela (SIMULAÇÃO): o exemplo usa
+        este mesmo pop-up, no mesmo canto, pra o cliente reconhecer o aviso real quando ele vier."""
         tk, px = self.tk, self.tema.px
         cor = VERDE if av.sinal == "X" else VERMELHO
         alvo = "W" if av.sinal == "X" else "Z"
@@ -548,7 +550,8 @@ class Popups:
             canvas.create_rectangle(0, 0, largura - 1, altura - 1, fill=PAINEL, outline=BORDA)
 
         hora = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
-        canvas.create_text(margem, px(20), text="Alerta Futuros", anchor="w", fill=TEXTO_FRACO, font=self.tema.texto(8))
+        canvas.create_text(margem, px(20), text=titulo, anchor="w", fill=TEXTO_FRACO if titulo == "Alerta Futuros" else OURO,
+                           font=self.tema.texto(8, "bold") if titulo != "Alerta Futuros" else self.tema.texto(8))
         canvas.create_text(largura - margem, px(20), text=f"fechou às {hora}", anchor="e", fill=TEXTO_FRACO,
                            font=self.tema.texto(8))
         canvas.create_text(margem, px(42), text=av.simbolo, anchor="w", fill=TEXTO, font=self.tema.numeros(12, "bold"))
