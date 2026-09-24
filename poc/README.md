@@ -90,3 +90,22 @@ O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
 - Depois de gerado, teste o `.exe` (não só o script) pelo menos uma vez antes de entregar —
   foi um build de teste como esse que pegou o bug do rodapé em 19/09/2026 (ver `CLAUDE.md`).
 - Ver `GUIA-INSTALACAO-CLIENTE.md` pro texto simples que acompanha o `.exe` na entrega.
+
+## Publicar uma versão nova (atualização automática)
+
+Desde 24/09/2026 o `.exe` confere, ao abrir, `https://futuros.blumenauti.com.br/versao.json` e,
+se houver versão mais nova, pergunta ao cliente se quer atualizar: baixa, confere SHA-256 e
+tamanho, guarda a versão atual em `Versões anteriores` (ao lado do `.exe`) e reabre sozinho
+(ver `atualizacao.py`). Para soltar uma versão:
+
+1. Aumente `VERSAO` em `versao.py` (ano.mês.dia.sequência).
+2. Feche o app (`Stop-Process -Name AlertaFuturos -ErrorAction SilentlyContinue`) e builde:
+   `python -m PyInstaller AlertaFuturos.spec --noconfirm`.
+3. `python publicar_versao.py "o que mudou, numa frase"` → gera `dist\versao.json`.
+4. Suba **juntos** `dist\AlertaFuturos.exe` → `/assets/AlertaFuturos.exe` e `dist\versao.json`
+   → `/versao.json` no Cloudflare Pages. Se o SHA-256 do JSON não bater com o `.exe` publicado,
+   os apps recusam o download (de propósito).
+
+O `.exe` ainda não tem assinatura digital (fica para a próxima versão): o download feito pelo
+próprio app não leva a marca "veio da internet", então em geral o SmartScreen não reaparece, mas
+um antivírus mais rígido pode estranhar. Se a troca falhar, o app oferece abrir a página de download.

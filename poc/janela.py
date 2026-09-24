@@ -64,6 +64,7 @@ from componentes import (
     BarraEspera, DiagramaVela15, Indicador, PainelPares, contagem_regressiva, estado_do_monitor,
     fracao_do_intervalo, proxima_avaliacao,
 )
+import atualizacao
 from configuracao import Configuracao, carregar, pasta_configuracao, salvar, validar, validar_pares
 from tema import (
     BORDA, CAMINHO_ICONE, CAMPO, CIANO, FUNDO, LINHA, OURO, OURO_ATIVO, OURO_TEXTO, PAINEL, TEXTO,
@@ -282,6 +283,16 @@ class Aplicativo:
         # o laço roda sempre (não só com o motor vivo): é ele que percebe o motor morrer sozinho e
         # devolve a janela ao estado "pode iniciar de novo"
         self._laco = self.root.after(200, self._verificar_fila)
+        # atualização automática (só no .exe): consulta o site em segundo plano, alguns segundos
+        # depois de abrir, pra não disputar a rede com a conexão inicial da Binance
+        self.fila_atualizacao: "queue.Queue[tuple]" = queue.Queue()
+        self.atualizacao: atualizacao.Publicada | None = None
+        self.atualizacao_perguntada = False
+        self.atualizando = False
+        self.janela_download: tk.Toplevel | None = None
+        self.link_atualizacao: tk.Label | None = None
+        if atualizacao.disponivel_neste_ambiente():
+            self.root.after(4000, lambda: threading.Thread(target=self._verificar_versao, daemon=True).start())
 
     def _configurar_bandeja(self, root: tk.Tk) -> None:
         if not BANDEJA_HABILITADA:
@@ -668,6 +679,7 @@ class Aplicativo:
                 texto.insert("end", resto + "\n")
             else:
                 texto.insert("end", "\n" + primeira + "\n")
+        texto.insert("end", f"\nVersão {atualizacao.VERSAO}")
         texto.config(state="disabled")
         janela.bind("<Escape>", lambda _e: janela.destroy())
 
@@ -858,6 +870,7 @@ class Aplicativo:
 
     def _verificar_fila(self) -> None:
         try:
+            self._tratar_atualizacao()
             self._acompanhar_tamanho()
             self._processar()
         except tk.TclError:  # janela sendo destruída no meio do laço
@@ -971,6 +984,8 @@ class Aplicativo:
             self._recolher_regra(True)
             self._estilizar_botoes(rodando=True)
             self._atualizar_barra(indicador[0])
+        self.link_atualizacao = None
+        self._mostrar_link_atualizacao()
 
     def _atualizar_status(self, chave: str) -> None:
         demorando = time.monotonic() - self.inicio_sessao > SEGUNDOS_CONEXAO_DEMORADA
@@ -1007,6 +1022,143 @@ class Aplicativo:
             self.barra_espera.parado()
         else:
             self.barra_espera.animar()
+
+    # ───────────────────────────── atualização automática ─────────────────────────────
+
+    def _verificar_versao(self) -> None:
+        """Roda numa thread: só consulta o site e põe o resultado na fila (Tk não é thread-safe)."""
+        publicada = atualizacao.verificar()
+        if publicada is not None:
+            self.fila_atualizacao.put(("disponivel", publicada))
+
+    def _janela_visivel(self) -> bool:
+        try:
+            return self.root.state() not in ("withdrawn", "iconic")
+        except tk.TclError:
+            return False
+
+    def _tratar_atualizacao(self) -> None:
+        while not self.fila_atualizacao.empty():
+            evento, dado = self.fila_atualizacao.get_nowait()
+            if evento == "disponivel":
+                self.atualizacao = dado
+            elif evento == "progresso":
+                self._progresso_download(*dado)
+            elif evento == "baixado":
+                self._instalar(dado)
+            elif evento == "erro":
+                self._falha_atualizacao(dado)
+        # quem abriu minimizado (início com o Windows) é perguntado quando abrir a janela
+        if (self.atualizacao and not self.atualizacao_perguntada and not self.atualizando
+                and self._janela_visivel()):
+            self.atualizacao_perguntada = True
+            self.perguntar_atualizacao()
+
+    def perguntar_atualizacao(self) -> None:
+        p = self.atualizacao
+        if p is None:
+            return
+        quando = f" ({p.data})" if p.data else ""
+        novidades = f"\n\nO que muda: {p.novidades}" if p.novidades else ""
+        aceitou = messagebox.askyesno(
+            "Nova versão do Alerta Futuros",
+            f"Há uma versão nova do Alerta Futuros{quando}.{novidades}\n\n"
+            "Atualizar agora? O programa baixa a versão nova, fecha e abre de novo sozinho — leva "
+            "menos de um minuto. Suas configurações continuam as mesmas.\n\n"
+            "A versão que você usa hoje fica guardada na pasta \"Versões anteriores\", ao lado do "
+            "programa, caso queira voltar a ela.",
+            parent=self.root)
+        if aceitou:
+            self.iniciar_atualizacao()
+        else:
+            self._mostrar_link_atualizacao()
+
+    def _mostrar_link_atualizacao(self) -> None:
+        """Quem escolheu "Não" continua vendo, no rodapé, que há versão nova — em dourado."""
+        if not self.atualizacao or self.atualizando or not self.atualizacao_perguntada:
+            return
+        if self.link_atualizacao is not None and self.link_atualizacao.winfo_exists():
+            return
+        self.link_atualizacao = tk.Label(self.rodape, text="Atualizar para a versão nova", bg=FUNDO, fg=OURO,
+                                         font=self.tema.texto(9, "underline"), cursor="hand2")
+        self.link_atualizacao.pack(side="right", padx=(self.tema.px(14), 0))
+        self.link_atualizacao.bind("<Button-1>", lambda _e: self.iniciar_atualizacao())
+
+    def iniciar_atualizacao(self) -> None:
+        if self.atualizando or self.atualizacao is None:
+            return
+        self.atualizando = True
+        px, tema = self.tema.px, self.tema
+        janela = self.janela_download = tk.Toplevel(self.root)
+        janela.title("Atualizando o Alerta Futuros")
+        janela.configure(bg=FUNDO, padx=px(22), pady=px(18))
+        janela.transient(self.root)
+        janela.resizable(False, False)
+        janela.protocol("WM_DELETE_WINDOW", lambda: None)  # não dá pra fechar no meio da troca
+        tk.Label(janela, text="Baixando a versão nova…", bg=FUNDO, fg=TEXTO,
+                 font=tema.texto(11, "bold")).pack(anchor="w")
+        self.rotulo_download = tk.Label(janela, text="Conectando ao site da Blumenau TI…", bg=FUNDO,
+                                        fg=TEXTO_FRACO, font=tema.texto(9), width=48, anchor="w")
+        self.rotulo_download.pack(anchor="w", pady=(px(6), 0))
+        self.barra_download = BarraEspera(janela, tema)
+        self.barra_download.pack(fill="x", pady=(px(10), 0))
+        self.barra_download.animar()
+        publicada = self.atualizacao
+        destino = pasta_configuracao() / "atualizacao" / f"AlertaFuturos-{publicada.versao}.exe"
+
+        def baixar():
+            try:
+                caminho = atualizacao.baixar(
+                    publicada, destino,
+                    progresso=lambda feito, total: self.fila_atualizacao.put(("progresso", (feito, total))))
+                self.fila_atualizacao.put(("baixado", caminho))
+            except Exception as e:  # rede, disco, hash — tudo vira mensagem pro cliente
+                log.warning("Falha ao baixar a atualização: %s", e)
+                self.fila_atualizacao.put(("erro", str(e)))
+
+        threading.Thread(target=baixar, daemon=True).start()
+
+    def _progresso_download(self, feito: int, total: int) -> None:
+        if self.janela_download is None or not self.janela_download.winfo_exists():
+            return
+        self.barra_download.progresso(feito / total if total else 0)
+        self.rotulo_download.config(text=f"{feito / 1048576:.1f} de {total / 1048576:.1f} MB")
+
+    def _instalar(self, baixado: Path) -> None:
+        """Troca o .exe e reabre. Para o monitor antes (CSV fechado direito), igual ao "Sair"."""
+        self.rotulo_download.config(text="Instalando e abrindo a versão nova…")
+        self.root.update_idletasks()
+        atual = Path(sys.executable)
+        try:
+            anterior = atualizacao.trocar_executavel(atual, baixado)
+            log.info("Atualizado: versão anterior guardada em %s", anterior)
+        except OSError as e:
+            log.warning("Não foi possível trocar o executável: %s", e)
+            self._falha_atualizacao(f"o Windows não deixou substituir o programa ({e.strerror or e})")
+            return
+        try:
+            atualizacao.abrir_novo(atual)
+        except OSError as e:
+            log.warning("Versão nova instalada, mas não abriu sozinha: %s", e)
+            messagebox.showinfo("Alerta Futuros atualizado",
+                                "A versão nova já está instalada. Abra o Alerta Futuros de novo.",
+                                parent=self.root)
+        self.encerrar_de_vez()
+
+    def _falha_atualizacao(self, motivo: str) -> None:
+        self.atualizando = False
+        if self.janela_download is not None and self.janela_download.winfo_exists():
+            self.barra_download.parado()
+            self.janela_download.destroy()
+        self.janela_download = None
+        abrir = messagebox.askyesno(
+            "Não foi possível atualizar",
+            f"A atualização não foi concluída: {motivo}.\n\nO programa continua funcionando na versão "
+            "atual. Quer abrir a página de download para baixar a versão nova manualmente?",
+            parent=self.root)
+        if abrir:
+            webbrowser.open(atualizacao.URL_PAGINA)
+        self._mostrar_link_atualizacao()
 
     def encerrar_de_vez(self) -> None:
         """Sai de verdade: para o monitor, fecha o CSV, derruba o ícone de bandeja (se houver)

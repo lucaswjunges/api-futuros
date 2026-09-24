@@ -238,6 +238,40 @@ class TestJanelaReal(unittest.TestCase):
         self.root.update_idletasks()
         self.assertEqual(self.app.conteudo.winfo_reqwidth(), largura)
 
+    def _versao_nova(self):
+        import atualizacao
+        return atualizacao.Publicada("2099.1.1.1", atualizacao.DOMINIO_PERMITIDO + "assets/AlertaFuturos.exe",
+                                     "0" * 64, 100, "01/01/2099", "Tela cheia")
+
+    def test_atualizacao_so_pergunta_com_a_janela_visivel(self):
+        self.app.fila_atualizacao.put(("disponivel", self._versao_nova()))
+        with patch("janela.messagebox.askyesno", return_value=False) as pergunta, \
+             patch.object(self.app, "_janela_visivel", return_value=False):
+            self.app._tratar_atualizacao()
+        pergunta.assert_not_called()  # abriu minimizado: espera o cliente abrir a janela
+        with patch("janela.messagebox.askyesno", return_value=False) as pergunta, \
+             patch.object(self.app, "_janela_visivel", return_value=True):
+            self.app._tratar_atualizacao()
+            self.app._tratar_atualizacao()
+        pergunta.assert_called_once()
+        self.assertIsNotNone(self.app.link_atualizacao)  # "Não" deixa o aviso dourado no rodapé
+
+    def test_falha_de_atualizacao_mantem_o_app_e_oferece_o_site(self):
+        self.app.atualizacao = self._versao_nova()
+        self.app.atualizacao_perguntada = True
+        with patch("janela.atualizacao.baixar", side_effect=ValueError("SHA-256 diferente")):
+            self.app.iniciar_atualizacao()
+            for _ in range(50):
+                if not self.app.fila_atualizacao.empty():
+                    break
+                time.sleep(0.02)
+        with patch("janela.messagebox.askyesno", return_value=True) as pergunta, \
+             patch("janela.webbrowser.open") as abrir:
+            self.app._tratar_atualizacao()
+        self.assertIn("SHA-256", pergunta.call_args[0][1])
+        abrir.assert_called_once()
+        self.assertFalse(self.app.atualizando)
+
     def test_como_usar_abre_uma_vez_so(self):
         self.app.mostrar_ajuda()
         primeira = self.app.janela_ajuda
