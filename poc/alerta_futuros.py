@@ -1,12 +1,14 @@
 """
-PoC — Alertas de Trading para Binance Futuros USDⓈ-M
-====================================================
+Alerta Futuros — Alertas de Trading para Binance Futuros USDⓈ-M
+===============================================================
+(Motor de alertas. Nasceu como a PoC de 16/09/2026; desde a Versão 1.0 é o motor usado pela
+janela — janela.py — e pelo .exe entregue ao cliente.)
 
 Somente dados PÚBLICOS: sem conta, sem API key, sem senha e sem envio de ordens.
 
 Fluxo:
   1. REST  (fapi.binance.com)         -> histórico de velas 5m p/ aquecer o RSI de Wilder
-  2. WebSocket (fstream.binance.com/market) -> klines 5m e 15m em tempo real (8 pares, 1 conexão)
+  2. WebSocket (fstream.binance.com/market) -> klines 5m e 15m em tempo real (até 16 pares, 1 conexão)
   3. A cada vela de 5m FECHADA (k.x == true), o RSI(2) de Wilder é sempre atualizado (precisa de
      todo fechamento de 5m pra ficar correto — pular um deixaria o valor divergente do gráfico).
      A CAPTAÇÃO (avaliação completa + pop-up + registro) só acontece nos fechamentos que também
@@ -312,7 +314,7 @@ class Ativo:
 
 def _get_json(caminho: str, **params):
     url = f"{REST_BASE}{caminho}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "alerta-futuros-poc/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "AlertaFuturos/1.0"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
 
@@ -705,7 +707,7 @@ def _exemplos() -> list[Avaliacao]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="PoC — alertas Binance Futuros (dados públicos)")
+    ap = argparse.ArgumentParser(description="Alerta Futuros — alertas Binance Futuros (dados públicos)")
     ap.add_argument("--sem-popup", action="store_true", help="somente console + CSV")
     ap.add_argument("--demo", action="store_true", help="exibe pop-ups de exemplo (sem internet)")
     ap.add_argument("--minutos", type=float, default=0, help="encerra após N minutos (0 = contínuo)")
@@ -741,7 +743,7 @@ def main() -> None:
             fila_popups.put(av)
 
     monitor = Monitor(p, ao_avaliar)
-    log.info("PoC Alerta Futuros — %d pares · RSI(%d) ≥ %s / ≤ %s · setores %s%% · ajuste ±%s%%",
+    log.info("Alerta Futuros — %d pares · RSI(%d) ≥ %s / ≤ %s · setores %s%% · ajuste ±%s%%",
              len(monitor.ativos), p.rsi_periodo, formatar_num(p.rsi_acima, 0), formatar_num(p.rsi_abaixo, 0),
              formatar_num(p.setor_pct, 0), formatar_num(p.ajuste_pct))
 
