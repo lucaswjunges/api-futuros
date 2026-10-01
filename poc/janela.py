@@ -354,7 +354,7 @@ class Aplicativo:
         self.tema = Tema(root)
         self.tema.zoom = self.zoom
         px = self.tema.px
-        root.title("Alerta Futuros")
+        root.title(f"Alerta Futuros {atualizacao.NOME_VERSAO}")
         root.configure(bg=FUNDO)
         # Redimensionável desde 24/09/2026: o cliente pediu a janela "até da tela toda". O que
         # importa é o botão maximizar (ou F11 / "Tela cheia"): aí o conteúdo inteiro é refeito
@@ -679,7 +679,7 @@ class Aplicativo:
                 texto.insert("end", resto + "\n")
             else:
                 texto.insert("end", "\n" + primeira + "\n")
-        texto.insert("end", f"\nVersão {atualizacao.VERSAO}")
+        texto.insert("end", f"\nVersão {atualizacao.NOME_VERSAO} (build {atualizacao.VERSAO})")
         texto.config(state="disabled")
         janela.bind("<Escape>", lambda _e: janela.destroy())
 

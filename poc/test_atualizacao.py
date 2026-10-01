@@ -44,6 +44,19 @@ class TestVersoes(unittest.TestCase):
         self.assertFalse(eh_mais_nova("2026.09.23.9", "2026.09.24.1"))
         self.assertFalse(eh_mais_nova("lixo", "2026.09.24.1"))
 
+    def test_sem_atual_usa_versao_do_momento_da_chamada(self):
+        # Antes o padrão era fixado na importação (atual: str = VERSAO) e ignorava esta troca.
+        from unittest import mock
+        with mock.patch.object(atualizacao, "VERSAO", "2026.09.24.2"):
+            self.assertTrue(eh_mais_nova("2026.10.01.1"))
+        with mock.patch.object(atualizacao, "VERSAO", "2099.1.1.1"):
+            self.assertFalse(eh_mais_nova("2026.10.01.1"))
+
+    def test_versao_atual_supera_a_publicada_em_24_09(self):
+        # Os apps instalados em 24/09 (2026.09.24.2) precisam enxergar esta como atualização.
+        self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.09.24.2"))
+        self.assertEqual(atualizacao.NOME_VERSAO, "1.0")
+
 
 class TestVersaoJson(unittest.TestCase):
     def test_valido(self):

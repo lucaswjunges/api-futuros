@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from versao import VERSAO
+from versao import NOME_VERSAO, VERSAO
 
 log = logging.getLogger("alerta.atualizacao")
 
@@ -70,8 +70,12 @@ def versao_como_tupla(texto: str) -> tuple[int, ...]:
         return ()
 
 
-def eh_mais_nova(publicada: str, atual: str = VERSAO) -> bool:
-    p, a = versao_como_tupla(publicada), versao_como_tupla(atual)
+def eh_mais_nova(publicada: str, atual: str | None = None) -> bool:
+    # atual=None e leitura aqui dentro (em vez de "atual: str = VERSAO" na assinatura): o valor
+    # padrão de um parâmetro é fixado quando o módulo é importado, então um teste (ou qualquer
+    # código) que trocasse atualizacao.VERSAO depois não teria efeito. Lendo na chamada, vale o
+    # VERSAO do momento.
+    p, a = versao_como_tupla(publicada), versao_como_tupla(VERSAO if atual is None else atual)
     return bool(p) and bool(a) and p > a
 
 
