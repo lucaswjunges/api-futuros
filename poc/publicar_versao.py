@@ -1,6 +1,7 @@
 """Gera o versao.json que vai para o site junto com o .exe (ver atualizacao.py).
 
   python publicar_versao.py "Novidades em uma frase"      # lê dist\\AlertaFuturos.exe
+  python publicar_versao.py "Novidades" --planos completa  # só o plano Completa instala sozinho
 
 Grava dist\\versao.json. No site, os dois arquivos ficam em:
   /versao.json                 <- o app consulta este
@@ -18,10 +19,10 @@ from datetime import date
 from pathlib import Path
 
 from atualizacao import DOMINIO_PERMITIDO
-from versao import VERSAO
+from versao import NOME_VERSAO, VERSAO
 
 
-def gerar(exe: Path, novidades: str = "", hoje: date | None = None) -> dict:
+def gerar(exe: Path, novidades: str = "", hoje: date | None = None, planos: list[str] | None = None) -> dict:
     dados = exe.read_bytes()
     if dados[:2] != b"MZ":
         raise SystemExit(f"{exe} não parece um .exe do Windows")
@@ -32,12 +33,21 @@ def gerar(exe: Path, novidades: str = "", hoje: date | None = None) -> dict:
         "sha256": hashlib.sha256(dados).hexdigest(),
         "tamanho": len(dados),
         "novidades": novidades,
+        "nome": NOME_VERSAO,
+        # sem a chave = todos os planos instalam (como até a 1.0); com ela, só os listados
+        **({"planos": planos} if planos else {}),
     }
 
 
 def main() -> None:
+    args = sys.argv[1:]
+    planos = None
+    if "--planos" in args:
+        i = args.index("--planos")
+        planos = [x.strip().lower() for x in args[i + 1].split(",") if x.strip()] if i + 1 < len(args) else []
+        del args[i:i + 2]
     pasta = Path(__file__).with_name("dist")
-    info = gerar(pasta / "AlertaFuturos.exe", " ".join(sys.argv[1:]))
+    info = gerar(pasta / "AlertaFuturos.exe", " ".join(args), planos=planos)
     (pasta / "versao.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(info, ensure_ascii=False, indent=2))
 

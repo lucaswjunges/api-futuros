@@ -52,9 +52,10 @@ class TestVersoes(unittest.TestCase):
         with mock.patch.object(atualizacao, "VERSAO", "2099.1.1.1"):
             self.assertFalse(eh_mais_nova("2026.10.01.1"))
 
-    def test_versao_atual_supera_a_publicada_em_24_09(self):
-        # Os apps instalados em 24/09 (2026.09.24.2) precisam enxergar esta como atualização.
+    def test_versao_atual_supera_as_ja_publicadas(self):
+        # Os apps instalados em 24/09 (2026.09.24.2) e o build 1.0 de 01/10 precisam enxergar esta.
         self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.09.24.2"))
+        self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.10.01.1"))
         self.assertEqual(atualizacao.NOME_VERSAO, "1.1")
 
 
@@ -162,6 +163,74 @@ class TestPublicarVersao(unittest.TestCase):
         self.assertEqual(p.sha256, hashlib.sha256(EXE).hexdigest())
         self.assertEqual(p.tamanho, len(EXE))
         self.assertEqual(p.data, "24/09/2026")
+        self.assertEqual(p.nome, atualizacao.NOME_VERSAO)
+        self.assertEqual(p.planos, ())  # sem --planos: todos os planos instalam
+
+    def test_gera_json_com_planos(self):
+        exe = Path(tempfile.mkdtemp()) / "AlertaFuturos.exe"
+        exe.write_bytes(EXE)
+        p = ler_publicada(gerar(exe, "IA", planos=["platinum"]))
+        self.assertEqual(p.planos, ("platinum",))
+        self.assertFalse(atualizacao.incluida_no_plano(p, "completa"))
+
+
+class TestPlanos(unittest.TestCase):
+    def test_sem_planos_vale_para_todos(self):
+        p = ler_publicada(_pub())
+        self.assertTrue(atualizacao.incluida_no_plano(p, "completa"))
+        self.assertTrue(atualizacao.incluida_no_plano(p, "essencial"))
+
+    def test_so_os_planos_listados(self):
+        p = ler_publicada(_pub(planos=["Completa", "gold"]))
+        self.assertEqual(p.planos, ("completa", "gold"))
+        self.assertTrue(atualizacao.incluida_no_plano(p, "completa"))
+        self.assertFalse(atualizacao.incluida_no_plano(p, "essencial"))
+
+    def test_padrao_e_o_plano_deste_build(self):
+        p = ler_publicada(_pub(planos=[atualizacao.PLANO]))
+        self.assertTrue(atualizacao.incluida_no_plano(p))
+
+    def test_planos_invalidos_recusam_o_json(self):
+        for ruim in ("completa", [1, 2], [""]):
+            with self.assertRaises(ValueError):
+                ler_publicada(_pub(planos=ruim))
+
+    def test_json_da_1_0_sem_nome_nem_planos(self):
+        p = ler_publicada(_pub())
+        self.assertEqual((p.nome, p.planos), ("", ()))
+
+
+class TestLimparVersoesAnteriores(unittest.TestCase):
+    def test_apaga_anteriores_e_restos_de_download(self):
+        programa, downloads = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+        anteriores = programa / atualizacao.PASTA_ANTERIORES
+        anteriores.mkdir()
+        (anteriores / "AlertaFuturos-2026.09.24.2.exe").write_bytes(b"MZ")
+        (anteriores / "AlertaFuturos-2026.10.01.1.exe").write_bytes(b"MZ")
+        (downloads / "AlertaFuturos-2026.10.07.1.part").write_bytes(b"x")
+        (programa / "AlertaFuturos.exe").write_bytes(b"MZ atual")
+        self.assertEqual(atualizacao.limpar_versoes_anteriores(programa, downloads), 3)
+        self.assertFalse(anteriores.exists())
+        self.assertEqual((programa / "AlertaFuturos.exe").read_bytes(), b"MZ atual")  # a atual fica
+
+    def test_sem_nada_para_limpar(self):
+        self.assertEqual(atualizacao.limpar_versoes_anteriores(Path(tempfile.mkdtemp())), 0)
+
+    def test_arquivo_que_nao_e_exe_fica(self):
+        programa = Path(tempfile.mkdtemp())
+        anteriores = programa / atualizacao.PASTA_ANTERIORES
+        anteriores.mkdir()
+        (anteriores / "leia-me.txt").write_text("x")
+        self.assertEqual(atualizacao.limpar_versoes_anteriores(programa), 0)
+        self.assertTrue((anteriores / "leia-me.txt").exists())
+
+    def test_arquivo_preso_nao_quebra(self):
+        programa = Path(tempfile.mkdtemp())
+        anteriores = programa / atualizacao.PASTA_ANTERIORES
+        anteriores.mkdir()
+        (anteriores / "AlertaFuturos-1.exe").write_bytes(b"MZ")
+        with patch("pathlib.Path.unlink", side_effect=PermissionError("em uso")):
+            self.assertEqual(atualizacao.limpar_versoes_anteriores(programa), 0)
 
 
 if __name__ == "__main__":

@@ -200,6 +200,10 @@ BANDEJA_HABILITADA = _bandeja_habilitada()
 # escopo da Opção A e da versão com IA) ainda é rascunho — ver aviso na própria página.
 URL_OUTRAS_VERSOES = "https://futuros.blumenauti.com.br/"
 
+# Quanto tempo a versão recém-instalada precisa ficar aberta antes de apagar as anteriores. Se ela
+# quebrar logo ao abrir, não chega aqui, e a anterior continua em "Versões anteriores" para voltar.
+ESPERA_LIMPEZA_MS = 60_000
+
 
 def abrir_outras_versoes() -> None:
     """Callback do link "Conhecer outras versões" — abre no navegador padrão do usuário.
@@ -302,6 +306,9 @@ class Aplicativo:
         self.link_atualizacao: tk.Label | None = None
         if atualizacao.disponivel_neste_ambiente():
             self.root.after(4000, lambda: threading.Thread(target=self._verificar_versao, daemon=True).start())
+            # se esta é a versão recém-instalada, as anteriores saem depois que ela provou que abre
+            self.root.after(ESPERA_LIMPEZA_MS, lambda: threading.Thread(
+                target=self._limpar_versoes_anteriores, daemon=True).start())
 
     def _configurar_bandeja(self, root: tk.Tk) -> None:
         if not BANDEJA_HABILITADA:
@@ -1196,38 +1203,76 @@ class Aplicativo:
             self.atualizacao_perguntada = True
             self.perguntar_atualizacao()
 
+    def _limpar_versoes_anteriores(self) -> None:
+        """Roda numa thread, ESPERA_LIMPEZA_MS depois de abrir: se chegou até aqui, a versão atual
+        funciona, e as anteriores guardadas na troca podem sair (o cliente fica só com a atual).
+        Se uma atualização estiver baixando agora, não mexe: o .part em andamento é dela."""
+        if self.atualizando:
+            return
+        apagados = atualizacao.limpar_versoes_anteriores(Path(sys.executable).parent,
+                                                         pasta_configuracao() / "atualizacao")
+        if apagados:
+            log.info("Versões anteriores removidas: %d arquivo(s).", apagados)
+
     def perguntar_atualizacao(self) -> None:
         p = self.atualizacao
         if p is None:
             return
+        nome = f" {p.nome}" if p.nome else ""
         quando = f" ({p.data})" if p.data else ""
         novidades = f"\n\nO que muda: {p.novidades}" if p.novidades else ""
+        if not atualizacao.incluida_no_plano(p):
+            self._oferecer_outro_plano(p, nome, novidades)
+            return
         aceitou = messagebox.askyesno(
             "Nova versão do Alerta Futuros",
-            f"Há uma versão nova do Alerta Futuros{quando}.{novidades}\n\n"
+            f"Há uma versão nova do Alerta Futuros{nome}{quando}, inclusa no seu plano.{novidades}\n\n"
             "Atualizar agora? O programa baixa a versão nova, fecha e abre de novo sozinho — leva "
-            "menos de um minuto. Suas configurações continuam as mesmas.\n\n"
-            "A versão que você usa hoje fica guardada na pasta \"Versões anteriores\", ao lado do "
-            "programa, caso queira voltar a ela.",
+            "menos de um minuto. Suas configurações continuam as mesmas, e a versão antiga é "
+            "removida assim que a nova abrir.",
             parent=self.root)
         if aceitou:
             self.iniciar_atualizacao()
         else:
             self._mostrar_link_atualizacao()
 
-    def _mostrar_link_atualizacao(self) -> None:
+    def _oferecer_outro_plano(self, p, nome: str, novidades: str) -> None:
+        """Versão nova que não faz parte do plano deste cliente: nunca instala. Avisa UMA vez por
+        versão (guardado em aviso_versao.txt) e deixa um link discreto no rodapé — perguntar a cada
+        abertura do programa seria insistente com quem já disse não."""
+        aviso = pasta_configuracao() / "aviso_versao.txt"
+        try:
+            ja_avisado = aviso.read_text(encoding="utf-8").strip() == p.versao
+        except OSError:
+            ja_avisado = False
+        if not ja_avisado:
+            try:
+                aviso.parent.mkdir(parents=True, exist_ok=True)
+                aviso.write_text(p.versao, encoding="utf-8")
+            except OSError as e:
+                log.info("Não foi possível guardar o aviso de versão: %s", e)
+            if messagebox.askyesno(
+                    "Nova versão do Alerta Futuros",
+                    f"Já existe o Alerta Futuros{nome}.{novidades}\n\nEla não faz parte do seu plano atual — "
+                    "o programa que você usa continua igual e funcionando. Quer conhecer a versão nova?",
+                    parent=self.root):
+                webbrowser.open(atualizacao.URL_VERSOES)
+        self._mostrar_link_atualizacao(texto="Conhecer a versão nova",
+                                       acao=lambda: webbrowser.open(atualizacao.URL_VERSOES))
+
+    def _mostrar_link_atualizacao(self, texto: str = "Atualizar para a versão nova", acao=None) -> None:
         """Quem escolheu "Não" continua vendo, no rodapé, que há versão nova — em dourado."""
         if not self.atualizacao or self.atualizando or not self.atualizacao_perguntada:
             return
         if self.link_atualizacao is not None and self.link_atualizacao.winfo_exists():
             return
-        self.link_atualizacao = tk.Label(self.rodape, text="Atualizar para a versão nova", bg=FUNDO, fg=OURO,
+        self.link_atualizacao = tk.Label(self.rodape, text=texto, bg=FUNDO, fg=OURO,
                                          font=self.tema.texto(9, "underline"), cursor="hand2")
         self.link_atualizacao.pack(side="right", padx=(self.tema.px(14), 0))
-        self.link_atualizacao.bind("<Button-1>", lambda _e: self.iniciar_atualizacao())
+        self.link_atualizacao.bind("<Button-1>", lambda _e: (acao or self.iniciar_atualizacao)())
 
     def iniciar_atualizacao(self) -> None:
-        if self.atualizando or self.atualizacao is None:
+        if self.atualizando or self.atualizacao is None or not atualizacao.incluida_no_plano(self.atualizacao):
             return
         self.atualizando = True
         px, tema = self.tema.px, self.tema
@@ -1273,7 +1318,7 @@ class Aplicativo:
         atual = Path(sys.executable)
         try:
             anterior = atualizacao.trocar_executavel(atual, baixado)
-            log.info("Atualizado: versão anterior guardada em %s", anterior)
+            log.info("Atualizado: versão anterior guardada em %s até a nova abrir", anterior)
         except OSError as e:
             log.warning("Não foi possível trocar o executável: %s", e)
             self._falha_atualizacao(f"o Windows não deixou substituir o programa ({e.strerror or e})")

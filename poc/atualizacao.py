@@ -15,8 +15,15 @@ Como funciona:
      caminho no Registro) e o hábito do cliente continuam valendo. Se algo falhar no meio, desfaz.
   5. Abre o .exe novo e fecha este (parando o monitor e fechando o CSV como no "Sair").
 
-A versão antiga fica guardada em "Versões anteriores" — era o que o Lucas pediu: se o cliente
-quiser voltar, é só abrir o arquivo de lá.
+Versão antiga: fica em "Versões anteriores" só até a nova provar que abre. Uns segundos depois de
+a versão nova subir normalmente, ela mesma apaga as anteriores (limpar_versoes_anteriores) — o
+cliente fica só com a versão atual, como num app moderno. Se a nova não chegar a abrir, a antiga
+continua lá para voltar manualmente.
+
+Planos (desde a 1.1): o versao.json pode trazer "planos": ["completa", ...]. A atualização só é
+instalada se o PLANO deste build estiver na lista (sem a chave = vale para todos, como até a 1.0).
+Fora do plano, o app só avisa que existe uma versão nova e leva à página de versões — nunca instala
+algo que o cliente não comprou.
 
 Assinatura digital: o .exe continua sem certificado (decisão de 24/09: resolver na próxima
 versão). Um arquivo baixado pelo próprio app não recebe a marca "veio da internet" que o navegador
@@ -41,12 +48,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from versao import NOME_VERSAO, VERSAO
+from versao import NOME_VERSAO, PLANO, VERSAO
 
 log = logging.getLogger("alerta.atualizacao")
 
 URL_VERSAO = "https://futuros.blumenauti.com.br/versao.json"
 URL_PAGINA = "https://futuros.blumenauti.com.br/"
+URL_VERSOES = "https://futuros.blumenauti.com.br/versoes"
 DOMINIO_PERMITIDO = "https://futuros.blumenauti.com.br/"
 PASTA_ANTERIORES = "Versões anteriores"
 TAMANHO_MAXIMO = 80 * 1024 * 1024  # um .exe nosso tem ~21 MB; muito acima disso é erro
@@ -60,6 +68,8 @@ class Publicada:
     tamanho: int
     data: str = ""
     novidades: str = ""
+    nome: str = ""  # nome que o cliente vê ("1.1"); versao.json antigo não tem
+    planos: tuple[str, ...] = ()  # planos para os quais esta versão é inclusa; vazio = todos
 
 
 def versao_como_tupla(texto: str) -> tuple[int, ...]:
@@ -79,13 +89,28 @@ def eh_mais_nova(publicada: str, atual: str | None = None) -> bool:
     return bool(p) and bool(a) and p > a
 
 
+def _planos(valor) -> tuple[str, ...]:
+    if valor is None:
+        return ()
+    if not isinstance(valor, list) or not all(isinstance(x, str) and x.strip() for x in valor):
+        raise ValueError("planos inválidos")
+    return tuple(x.strip().lower() for x in valor)
+
+
+def incluida_no_plano(publicada: Publicada, plano: str | None = None) -> bool:
+    """True se esta versão é inclusa no plano deste build (instala com um clique); False se é de
+    outro plano (o app só mostra que existe e oferece conhecer). Lista vazia = todos os planos."""
+    return not publicada.planos or (plano or PLANO).lower() in publicada.planos
+
+
 def ler_publicada(dados: dict) -> Publicada:
     """Valida o versao.json. Levanta ValueError se faltar algo ou se a URL não for do nosso site
     (o app nunca baixa executável de outro endereço, mesmo que o JSON seja adulterado)."""
     try:
         p = Publicada(versao=str(dados["versao"]), url=str(dados["url"]),
                       sha256=str(dados["sha256"]).lower(), tamanho=int(dados["tamanho"]),
-                      data=str(dados.get("data", "")), novidades=str(dados.get("novidades", "")))
+                      data=str(dados.get("data", "")), novidades=str(dados.get("novidades", "")),
+                      nome=str(dados.get("nome", "")), planos=_planos(dados.get("planos")))
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"versao.json incompleto: {e}") from e
     if not versao_como_tupla(p.versao):
@@ -193,6 +218,33 @@ def abrir_novo(caminho: Path) -> None:
     if sys.platform == "win32":
         opcoes["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     subprocess.Popen([str(caminho)], env=ambiente, cwd=str(caminho.parent), close_fds=True, **opcoes)
+
+
+def limpar_versoes_anteriores(pasta_programa: Path, pasta_downloads: Path | None = None) -> int:
+    """Apaga os .exe guardados em "Versões anteriores" (e a pasta, se ficar vazia) e restos de
+    downloads (.part, .exe) da pasta de atualização. Chamado pela versão NOVA depois que ela já
+    abriu normalmente. Nunca levanta exceção: arquivo preso ou sem permissão fica para a próxima.
+    Devolve quantos arquivos apagou."""
+    apagados = 0
+    alvos = [pasta_programa / PASTA_ANTERIORES]
+    if pasta_downloads is not None:
+        alvos.append(pasta_downloads)
+    for pasta in alvos:
+        if not pasta.is_dir():
+            continue
+        for arquivo in pasta.iterdir():
+            if arquivo.is_file() and arquivo.suffix.lower() in (".exe", ".part"):
+                try:
+                    arquivo.unlink()
+                    apagados += 1
+                except OSError as e:
+                    log.info("Não foi possível apagar %s agora: %s", arquivo, e)
+        if pasta.name == PASTA_ANTERIORES:
+            try:
+                pasta.rmdir()  # só some se estiver vazia
+            except OSError:
+                pass
+    return apagados
 
 
 def disponivel_neste_ambiente() -> bool:
