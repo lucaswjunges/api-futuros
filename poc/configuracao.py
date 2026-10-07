@@ -4,7 +4,8 @@ Configuração persistida da janela (Opção B — Completa).
 
 Guarda os campos que o cliente pediu na janela (item 4.5-d e Seção 5 da proposta):
 limites do RSI, tamanho dos setores A/C, tamanho mínimo da vela 15m, fator de
-ajuste do preço-alvo, e a opção de iniciar junto com o Windows.
+ajuste do preço-alvo (o geral e, desde a 1.1, o próprio de cada par), e a opção de
+iniciar junto com o Windows.
 
 Ficam de fora deste módulo, de propósito, tudo que precisa de Tkinter ou do
 Monitor (rede/UI) — assim dá pra testar carregar/salvar/validar sem display e
@@ -56,7 +57,30 @@ def _parametros_de_dict(dados: dict) -> Parametros:
     """Usa só os campos conhecidos de Parametros; ignora campos novos/removidos entre versões
     e mantém o padrão de fábrica pra qualquer campo ausente (config de uma versão mais velha)."""
     validos = {f.name for f in fields(Parametros)}
-    return Parametros(**{k: v for k, v in dados.items() if k in validos})
+    lidos = {k: v for k, v in dados.items() if k in validos}
+    lidos["ajuste_por_par"] = _ajustes_de_dict(lidos.get("ajuste_por_par"))
+    return Parametros(**lidos)
+
+
+def _ajustes_de_dict(dados) -> dict[str, float]:
+    """Fatores próprios por par vindos do config.json. Config da 1.0 (antes de 05/10/2026) não
+    tem a chave e volta vazio — todos os pares usam o fator geral, exatamente como antes. Entrada
+    estragada (símbolo inválido, valor que não é número ou <= 0) é descartada sozinha, sem levar
+    as outras junto: o app sempre abre."""
+    if not isinstance(dados, dict):
+        return {}
+    ajustes = {}
+    for simbolo, valor in dados.items():
+        if not isinstance(simbolo, str) or isinstance(valor, bool):
+            continue
+        simbolo = simbolo.strip().upper()
+        try:
+            valor = float(valor)
+        except (TypeError, ValueError):
+            continue
+        if _SIMBOLO.match(simbolo) and 0 < valor < 100:
+            ajustes[simbolo] = valor
+    return ajustes
 
 
 def _pares_de_dict(dados) -> list[str]:
@@ -115,6 +139,10 @@ def validar(p: Parametros) -> list[str]:
         erros.append("Tamanho mínimo da vela de 15m não pode ser negativo.")
     if p.ajuste_pct <= 0:
         erros.append("Fator de ajuste do preço-alvo deve ser maior que zero.")
+    ruins = [s for s, v in p.ajuste_por_par.items() if not (0 < v < 100)]
+    if ruins:
+        erros.append(f"Fator próprio de {', '.join(ruins)}: use um número maior que zero e menor que 100 "
+                     "(ex.: 0,8).")
     return erros
 
 

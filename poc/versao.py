@@ -9,5 +9,5 @@ Dois valores, de propósito:
                  patamar (1.1, 2.0 com IA...), não a cada correção.
 """
 
-VERSAO = "2026.10.01.1"
-NOME_VERSAO = "1.0"
+VERSAO = "2026.10.07.1"
+NOME_VERSAO = "1.1"

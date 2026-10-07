@@ -49,6 +49,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
@@ -58,7 +59,8 @@ from alerta_futuros import (
     _exemplos, baixar_casas_decimais, pares_desconhecidos, resolver_pares,
 )
 from campos_formulario import (
-    CAMPOS, CampoInvalido, pares_do_texto, parametros_dos_textos, texto_dos_pares, textos_de,
+    CAMPOS, CampoInvalido, ajustes_dos_campos, pares_do_texto, parametros_dos_textos, texto_do_parametro,
+    texto_dos_pares, textos_de,
 )
 from componentes import (
     BarraEspera, DiagramaVela15, Indicador, PainelPares, contagem_regressiva, estado_do_monitor,
@@ -164,6 +166,9 @@ Clique em "Ver exemplo de alerta". O exemplo é uma simulação: aparece no mesm
 Trocar ou acrescentar moedas
 No campo "Pares acompanhados", escreva os símbolos como aparecem na Binance (ex.: BTCUSDT), separados por espaço ou vírgula — até 16. Vale no próximo Iniciar. Se um símbolo não existir em Futuros, a janela avisa qual é.
 
+Fator do preço-alvo diferente para uma moeda
+O fator do "Preço-alvo" vale para todos os pares. Para um par ter o seu, clique em "Fator diferente por par…" (ao lado do título Preço-alvo) e escreva o fator na caixa do par, por exemplo 0,8. Em branco, o par continua com o fator geral. Vale no próximo Iniciar.
+
 Tela cheia
 Maximize a janela, clique em "Tela cheia" no rodapé ou aperte F11: tudo fica maior e ocupa a tela. De novo (ou F11) volta ao normal.
 
@@ -268,6 +273,10 @@ class Aplicativo:
         self.reduzir_movimento = tk.BooleanVar(value=False)
         self.aviso_bandeja_mostrado = False
         self.janela_ajuda: tk.Toplevel | None = None
+        # fator próprio por par (1.1): editado na janelinha "Fator por par", vale no próximo Iniciar
+        # como os outros campos. Fica fora dos widgets pra sobreviver à remontagem do zoom.
+        self.ajustes: dict[str, float] = dict(self.config.parametros.ajuste_por_par)
+        self.janela_ajustes: tk.Toplevel | None = None
         self._laco: str | None = None
         # tela cheia: zoom atual, tamanho natural do conteúdo (medido com zoom 1) e a última
         # avaliação de cada par (pra redesenhar o quadro quando a janela é refeita no novo zoom)
@@ -454,7 +463,17 @@ class Aplicativo:
         self.diagrama = DiagramaVela15(grupo, tema, self.config.parametros.setor_pct)
         self.diagrama.pack(side="left", padx=(px(22), 0))
 
-        self._titulo(regra, "Preço-alvo", acima=px(10))
+        # O link do fator por par (1.1) vai na mesma linha do título, à direita: assim a regra não
+        # cresce em altura — num notebook de 768 px a janela com 16 pares já usa quase tudo.
+        linha_titulo = tk.Frame(regra, bg=FUNDO)
+        linha_titulo.pack(fill="x")
+        self.link_ajustes = tk.Label(linha_titulo, text="", bg=FUNDO, fg=TEXTO_FRACO,
+                                     font=tema.texto(9, "underline"), cursor="hand2")
+        # empacotado ANTES do título: no pack, o que vem depois de um side="top" vai para baixo dele
+        self.link_ajustes.pack(side="right", anchor="s", pady=(0, px(2)))
+        self._titulo(linha_titulo, "Preço-alvo", acima=px(10))
+        self.link_ajustes.bind("<Button-1>", lambda _evt: self.abrir_ajustes())
+        self._atualizar_link_ajustes()
         frase = self._frase(regra)
         self._campo(frase, "ajuste_pct", textos, primeiro=True)
         self._palavras(frase, "% acima do fechamento (W) ou abaixo dele (Z)")
@@ -490,6 +509,117 @@ class Aplicativo:
                              f"No máximo {LIMITE_PARES}. Vale a partir do próximo “Iniciar”.",
                  bg=FUNDO, fg=TEXTO_APAGADO, font=tema.texto(8), wraplength=px(392),
                  justify="left").pack(anchor="w", pady=(px(3), 0))
+
+    def _texto_link_ajustes(self) -> str:
+        n = len(self.ajustes)
+        if not n:
+            return "Fator diferente por par…"
+        return f"Fator próprio: {'1 par' if n == 1 else f'{n} pares'}…"
+
+    def _atualizar_link_ajustes(self) -> None:
+        travado = self.sessao_ativa
+        self.link_ajustes.config(text=self._texto_link_ajustes(), fg=TEXTO_APAGADO if travado else
+                                 (OURO if self.ajustes else TEXTO_FRACO), cursor="" if travado else "hand2")
+
+    def _pares_na_tela(self) -> list[str]:
+        """Pares que a janelinha do fator lista: os do campo, como estão digitados agora (sem
+        repetir); se o campo estiver vazio, os da configuração salva."""
+        return list(dict.fromkeys(self._ler_pares()))[:LIMITE_PARES] or list(self.config.pares)
+
+    def _fator_geral_na_tela(self) -> str:
+        texto = self.entradas["ajuste_pct"].get().strip() if "ajuste_pct" in self.entradas else ""
+        return texto or texto_do_parametro(self.config.parametros.ajuste_pct)
+
+    def abrir_ajustes(self) -> None:
+        """Janelinha "Fator por par" (1.1, pedido do cliente em 05/10/2026): uma caixa ao lado de
+        cada par da lista. Em branco = usa o fator geral do Preço-alvo. Travada com o monitor
+        rodando, como os outros campos."""
+        if self.sessao_ativa:
+            return
+        if self.janela_ajustes is not None and self.janela_ajustes.winfo_exists():
+            self.janela_ajustes.lift()
+            return
+        px, tema = self.tema.px, self.tema
+        pares = self._pares_na_tela()
+        janela = self.janela_ajustes = tk.Toplevel(self.root)
+        janela.title("Fator próprio por par")
+        janela.configure(bg=FUNDO, padx=px(20), pady=px(16))
+        janela.transient(self.root)
+        janela.resizable(False, False)
+        tk.Label(janela, text="Fator do preço-alvo por par", bg=FUNDO, fg=TEXTO,
+                 font=tema.texto(11, "bold")).pack(anchor="w")
+        tk.Label(janela, text=f"Deixe em branco para o par usar o fator geral ({self._fator_geral_na_tela()}%). "
+                              "O fator forma W (acima do fechamento) e Z (abaixo dele).",
+                 bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(9), wraplength=px(400), justify="left").pack(
+            anchor="w", pady=(px(4), px(10)))
+        grade = tk.Frame(janela, bg=FUNDO)
+        grade.pack(anchor="w")
+        self.entradas_ajuste: dict[str, tk.Entry] = {}
+        por_coluna = (len(pares) + 1) // 2 if len(pares) > 8 else len(pares)
+        for i, simbolo in enumerate(pares):
+            linha, coluna = i % por_coluna, (i // por_coluna) * 3
+            tk.Label(grade, text=simbolo, bg=FUNDO, fg=TEXTO, font=tema.numeros(10), anchor="w").grid(
+                row=linha, column=coluna, sticky="w", padx=(px(24) if coluna else 0, px(8)), pady=px(2))
+            entrada = tk.Entry(grade, width=6, justify="right", font=tema.numeros(11), bg=CAMPO, fg=TEXTO,
+                               insertbackground=OURO, relief="flat", bd=0, highlightthickness=1,
+                               highlightbackground=BORDA, highlightcolor=OURO)
+            if simbolo in self.ajustes:
+                entrada.insert(0, texto_do_parametro(self.ajustes[simbolo]))
+            entrada.grid(row=linha, column=coluna + 1, pady=px(2), ipady=px(2))
+            entrada.bind("<KeyRelease>", lambda _e, w=entrada: w.configure(highlightbackground=BORDA))
+            tk.Label(grade, text="%", bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(10)).grid(
+                row=linha, column=coluna + 2, sticky="w", padx=(px(4), 0))
+            self.entradas_ajuste[simbolo] = entrada
+        self.rotulo_erro_ajustes = tk.Label(janela, text="", bg=FUNDO, fg=VERMELHO, font=tema.texto(9),
+                                            wraplength=px(400), justify="left")
+        self.rotulo_erro_ajustes.pack(anchor="w", pady=(px(6), 0))
+        botoes = tk.Frame(janela, bg=FUNDO)
+        botoes.pack(fill="x", pady=(px(8), 0))
+        opcoes = dict(font=tema.texto(10, "bold"), relief="flat", bd=0, padx=px(14), pady=px(6), cursor="hand2")
+        tk.Button(botoes, text="OK", command=self.confirmar_ajustes, bg=OURO, fg=OURO_TEXTO,
+                  activebackground=OURO_ATIVO, activeforeground=OURO_TEXTO, **opcoes).pack(side="left")
+        tk.Button(botoes, text="Cancelar", command=janela.destroy, bg=PAINEL, fg=TEXTO,
+                  activebackground=PAINEL, activeforeground=TEXTO, **opcoes).pack(side="left", padx=(px(8), 0))
+        limpar = tk.Label(botoes, text="Limpar todos", bg=FUNDO, fg=TEXTO_FRACO,
+                          font=tema.texto(9, "underline"), cursor="hand2")
+        limpar.pack(side="right")
+        limpar.bind("<Button-1>", lambda _e: [w.delete(0, "end") for w in self.entradas_ajuste.values()])
+        tk.Label(janela, text="Vale a partir do próximo “Iniciar”.", bg=FUNDO, fg=TEXTO_APAGADO,
+                 font=tema.texto(8)).pack(anchor="w", pady=(px(8), 0))
+        janela.bind("<Return>", lambda _e: self.confirmar_ajustes())
+        janela.bind("<Escape>", lambda _e: janela.destroy())
+        # no meio da janela principal (e dentro da tela), não no canto onde o Windows quiser pôr
+        janela.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - janela.winfo_reqwidth()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - janela.winfo_reqheight()) // 3
+        x = min(max(x, 0), max(self.root.winfo_screenwidth() - janela.winfo_reqwidth(), 0))
+        y = min(max(y, 0), max(self.root.winfo_screenheight() - janela.winfo_reqheight() - px(40), 0))
+        janela.geometry(f"+{x}+{y}")
+        if self.entradas_ajuste:
+            next(iter(self.entradas_ajuste.values())).focus_set()
+
+    def confirmar_ajustes(self) -> bool:
+        """OK da janelinha: guarda os fatores (para o próximo Iniciar) ou mostra o erro e destaca
+        a caixa. Devolve se aceitou."""
+        for entrada in self.entradas_ajuste.values():
+            entrada.configure(highlightbackground=BORDA)
+        try:
+            ajustes = ajustes_dos_campos({s: e.get() for s, e in self.entradas_ajuste.items()})
+        except CampoInvalido as e:
+            self.entradas_ajuste[e.campo].configure(highlightbackground=VERMELHO)
+            self.rotulo_erro_ajustes.config(text=str(e))
+            return False
+        erros = validar(replace(Parametros(), ajuste_por_par=ajustes))
+        if erros:
+            for s, v in ajustes.items():
+                if not 0 < v < 100:
+                    self.entradas_ajuste[s].configure(highlightbackground=VERMELHO)
+            self.rotulo_erro_ajustes.config(text="\n".join(erros))
+            return False
+        self.ajustes = ajustes
+        self._atualizar_link_ajustes()
+        self.janela_ajustes.destroy()
+        return True
 
     def _titulo(self, master: tk.Misc, texto: str, acima: int = 0) -> None:
         tk.Label(master, text=texto, bg=FUNDO, fg=TEXTO, font=self.tema.texto(10, "bold")).pack(
@@ -726,6 +856,7 @@ class Aplicativo:
                            highlightbackground=BORDA if habilitar else LINHA)
         self.entrada_pares.config(state="normal" if habilitar else "disabled",
                                   highlightbackground=BORDA if habilitar else LINHA)
+        self._atualizar_link_ajustes()
 
     def _marcar_erro(self, campo: str, com_erro: bool) -> None:
         cor = VERMELHO if com_erro else BORDA
@@ -754,8 +885,11 @@ class Aplicativo:
                 self._marcar_erro(e.campo, True)
             self.rotulo_erro.config(text=str(e))
             return
-        erros = validar(parametros)
         pares = self._ler_pares()
+        # fator próprio só dos pares que estão na lista: se um par saiu, o fator dele sai junto
+        self.ajustes = {s: v for s, v in self.ajustes.items() if s in pares}
+        parametros = replace(parametros, ajuste_por_par=dict(self.ajustes))
+        erros = validar(parametros)
         erros_pares = validar_pares(pares)
         if not erros_pares:
             # só depois do formato estar certo: esta checagem custa uma consulta à Binance
@@ -832,9 +966,12 @@ class Aplicativo:
         if recolher:
             p = self.config.parametros
             num = lambda v: f"{v:g}".replace(".", ",")  # noqa: E731
+            n = len(p.ajuste_por_par)
+            proprios = "" if not n else f" (próprio em {'1 par' if n == 1 else f'{n} pares'})"
             self.rotulo_regra_resumida.config(
                 text=f"Regra: RSI(2) até {num(p.rsi_abaixo)} ou a partir de {num(p.rsi_acima)} · setores "
-                     f"{num(p.setor_pct)}% · alvo {num(p.ajuste_pct)}% — pare o monitoramento para editar.")
+                     f"{num(p.setor_pct)}% · alvo {num(p.ajuste_pct)}%{proprios} — pare o monitoramento "
+                     "para editar.")
             self.frame_regra.pack_forget()
             self.rotulo_regra_resumida.pack(fill="x", pady=(self.tema.px(10), 0), before=self.frame_acoes)
         else:

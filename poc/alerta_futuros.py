@@ -43,7 +43,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -90,9 +90,18 @@ class Parametros:
     rsi_abaixo: float = 5.0  # faixa "Abaixo": 0–5
     setor_pct: float = 30.0  # tamanho dos setores extremos A e C (% do tamanho da vela 15m)
     tamanho_min_pct: float = 0.020  # vela 15m válida se (Máx − Mín) / Mín > 0,020%
-    ajuste_pct: float = 0.5  # fator de ajuste do preço-alvo
+    ajuste_pct: float = 0.5  # fator de ajuste do preço-alvo GERAL (vale para quem não tem fator próprio)
     popup_segundos: int = 10
     velas_aquecimento: int = 300  # 25 h de velas 5m: RSI idêntico ao do gráfico desde o 1º minuto
+    # Fator próprio por par (pedido do cliente em 05/10/2026, versão 1.1): {"ETHUSDT": 0.8}. Par
+    # que não está aqui usa ajuste_pct. Vazio = comportamento idêntico ao da 1.0.
+    ajuste_por_par: dict[str, float] = field(default_factory=dict)
+
+    def ajuste_de(self, simbolo: str | None) -> float:
+        """Fator (%) usado para formar W e Z deste par: o próprio, se tiver, senão o geral."""
+        if simbolo is None:
+            return self.ajuste_pct
+        return self.ajuste_por_par.get(simbolo, self.ajuste_pct)
 
 
 @dataclass
@@ -199,11 +208,14 @@ def setor_vela15(fechamento: float, maxima: float, minima: float, p: Parametros)
     return "B", tamanho_pct
 
 
-def cruzamento(faixa: str | None, setor: str | None, fechamento: float, p: Parametros) -> tuple[str, float] | None:
+def cruzamento(faixa: str | None, setor: str | None, fechamento: float, p: Parametros,
+               simbolo: str | None = None) -> tuple[str, float] | None:
+    """Sinal e preço-alvo. O fator é o do par (`simbolo`) se ele tiver um próprio, senão o geral."""
+    ajuste = p.ajuste_de(simbolo)
     if faixa == "ACIMA" and setor == "A":
-        return "X", fechamento * (1 + p.ajuste_pct / 100)  # Preço-Alvo W (verde)
+        return "X", fechamento * (1 + ajuste / 100)  # Preço-Alvo W (verde)
     if faixa == "ABAIXO" and setor == "C":
-        return "Y", fechamento * (1 - p.ajuste_pct / 100)  # Preço-Alvo Z (vermelho)
+        return "Y", fechamento * (1 - ajuste / 100)  # Preço-Alvo Z (vermelho)
     return None
 
 
@@ -290,7 +302,7 @@ class Ativo:
         minima = min(x.minima for x in na_janela)
         setor, tamanho_pct = setor_vela15(v.fecha, maxima, minima, self.p)
 
-        cruz = cruzamento(faixa, setor, v.fecha, self.p)
+        cruz = cruzamento(faixa, setor, v.fecha, self.p, self.simbolo)
         sinal, alvo = cruz if cruz else (None, None)
         return Avaliacao(
             simbolo=self.simbolo,

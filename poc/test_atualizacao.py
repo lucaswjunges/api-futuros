@@ -55,7 +55,7 @@ class TestVersoes(unittest.TestCase):
     def test_versao_atual_supera_a_publicada_em_24_09(self):
         # Os apps instalados em 24/09 (2026.09.24.2) precisam enxergar esta como atualização.
         self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.09.24.2"))
-        self.assertEqual(atualizacao.NOME_VERSAO, "1.0")
+        self.assertEqual(atualizacao.NOME_VERSAO, "1.1")
 
 
 class TestVersaoJson(unittest.TestCase):

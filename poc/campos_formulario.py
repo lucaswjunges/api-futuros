@@ -83,3 +83,20 @@ def pares_do_texto(texto: str) -> list[str]:
 def texto_dos_pares(pares) -> str:
     """Lista de pares como o cliente vê e edita no campo da janela."""
     return " ".join(pares)
+
+
+def ajustes_dos_campos(textos: dict[str, str]) -> dict[str, float]:
+    """Fator próprio por par (1.1), vindo da janelinha "Fator por par": {símbolo: texto digitado}.
+    Campo em branco = o par usa o fator geral (não entra no resultado). Só converte o número; se
+    ele faz sentido (> 0 e < 100) é com configuracao.validar, como nos outros campos.
+    Levanta CampoInvalido com campo = símbolo do par, pra janelinha destacar a caixa certa."""
+    ajustes: dict[str, float] = {}
+    for simbolo, texto in textos.items():
+        if not texto.strip():
+            continue
+        bruto = texto.strip().replace(".", "").replace(",", ".") if "," in texto else texto.strip()
+        try:
+            ajustes[simbolo] = float(bruto)
+        except ValueError:
+            raise CampoInvalido(f"Fator de {simbolo}: “{texto.strip()}” não é um número válido.", simbolo) from None
+    return ajustes
