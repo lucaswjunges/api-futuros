@@ -56,7 +56,7 @@ from tkinter import messagebox
 
 from alerta_futuros import (
     ATRASO_MAX_POPUP_MS, LIMITE_PARES, MS_5M, PARES, Avaliacao, Monitor, Parametros, Popups, Registro,
-    _exemplos, baixar_casas_decimais, pares_desconhecidos, resolver_pares,
+    _exemplos, baixar_casas_decimais, cruzamento, formatar_preco, pares_desconhecidos, resolver_pares,
 )
 from campos_formulario import (
     CAMPOS, CampoInvalido, ajustes_dos_campos, pares_do_texto, parametros_dos_textos, texto_do_parametro,
@@ -167,7 +167,7 @@ Trocar ou acrescentar moedas
 No campo "Pares acompanhados", escreva os símbolos como aparecem na Binance (ex.: BTCUSDT), separados por espaço ou vírgula — até 16. Vale no próximo Iniciar. Se um símbolo não existir em Futuros, a janela avisa qual é.
 
 Fator do preço-alvo diferente para uma moeda
-O fator do "Preço-alvo" vale para todos os pares. Para um par ter o seu, clique em "Fator diferente por par…" (ao lado do título Preço-alvo) e escreva o fator na caixa do par, por exemplo 0,8. Em branco, o par continua com o fator geral. Vale no próximo Iniciar.
+O fator do "Preço-alvo" vale para todos os pares. Para um par ter o seu, clique em "Fator por par…" (ao lado do título Preço-alvo) e escreva o fator na caixa do par, por exemplo 0,8. Em branco, o par continua com o fator geral. Vale no próximo Iniciar.
 
 Tela cheia
 Maximize a janela, clique em "Tela cheia" no rodapé ou aperte F11: tudo fica maior e ocupa a tela. De novo (ou F11) volta ao normal.
@@ -513,8 +513,8 @@ class Aplicativo:
     def _texto_link_ajustes(self) -> str:
         n = len(self.ajustes)
         if not n:
-            return "Fator diferente por par…"
-        return f"Fator próprio: {'1 par' if n == 1 else f'{n} pares'}…"
+            return "Fator por par…"
+        return f"Fator por par · {'1 próprio' if n == 1 else f'{n} próprios'}…"
 
     def _atualizar_link_ajustes(self) -> None:
         travado = self.sessao_ativa
@@ -782,6 +782,11 @@ class Aplicativo:
         "SIMULAÇÃO" — é pra o cliente reconhecer o aviso quando ele vier de verdade. Não passa pela
         fila nem pelo Registro: não entra no CSV nem nos contadores."""
         av = _exemplos()[0]
+        # o exemplo usa o fator que está valendo para o par (o próprio ou o geral da tela)
+        p = replace(self._parametros_desenho, ajuste_por_par=dict(self.ajustes))
+        sinal, alvo = cruzamento(av.faixa, av.setor, av.fechamento, p, av.simbolo)
+        av = replace(av, sinal=sinal, alvo=alvo, ajuste_pct=p.ajuste_de(av.simbolo),
+                     alvo_texto=formatar_preco(alvo, PARES.get(av.simbolo, 4)))
         self.popups.mostrar(av, titulo="SIMULAÇÃO · exemplo, não é sinal real")
 
     def mostrar_ajuda(self) -> None:

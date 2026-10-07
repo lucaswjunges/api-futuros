@@ -131,6 +131,7 @@ class Avaliacao:
     latencia_ms: float | None = None
     publicacao_binance_ms: float | None = None  # evento Binance (E) − fechamento da vela
     recuperada: bool = False  # vela fechada durante queda de conexão, avaliada ao reconectar
+    ajuste_pct: float | None = None  # fator (%) deste par usado no Preço-Alvo (1.1: próprio ou o geral)
 
 
 # ─────────────────────────────── Lógica pura (testável) ───────────────────────────────
@@ -318,6 +319,7 @@ class Ativo:
             alvo=alvo,
             alvo_texto=formatar_preco(alvo, self.casas) if alvo is not None else "",
             fechamento_texto=formatar_preco(v.fecha, self.casas),
+            ajuste_pct=self.p.ajuste_de(self.simbolo),
         )
 
 
@@ -569,6 +571,12 @@ class Popups:
         canvas.create_text(largura - margem, px(20), text=f"fechou às {hora}", anchor="e", fill=TEXTO_FRACO,
                            font=self.tema.texto(8))
         canvas.create_text(margem, px(42), text=av.simbolo, anchor="w", fill=TEXTO, font=self.tema.numeros(12, "bold"))
+        if av.ajuste_pct is not None:
+            # 1.1: o fator deste par, à direita do nome — dá pra conferir W/Z de cabeça na hora
+            valor = canvas.create_text(largura - margem, px(42), text=f"{av.ajuste_pct:g}%".replace(".", ","),
+                                       anchor="e", fill=TEXTO, font=self.tema.numeros(9))
+            canvas.create_text(canvas.bbox(valor)[0] - px(4), px(42), text="fator", anchor="e", fill=TEXTO_FRACO,
+                               font=self.tema.texto(8))
         canvas.create_text(margem, px(70), text=f"{alvo} {av.alvo_texto}", anchor="w", fill=cor,
                            font=self.tema.numeros(24, "bold"))
         self._detalhes(canvas, margem, px(98), av)
@@ -633,7 +641,7 @@ class Popups:
 class Registro:
     CAMPOS = ["fechamento_5m", "par", "preco_fechamento", "rsi2", "faixa", "max_15m", "min_15m",
               "tamanho_15m_pct", "setor", "sinal", "preco_alvo", "latencia_ms", "publicacao_binance_ms",
-              "recuperada"]
+              "recuperada", "fator_pct"]  # fator_pct no fim (1.1): quem já lê o CSV por coluna não quebra
 
     def __init__(self, pasta: Path):
         pasta.mkdir(parents=True, exist_ok=True)
@@ -667,7 +675,7 @@ class Registro:
             f"{fech:%Y-%m-%d %H:%M}", av.simbolo, av.fechamento, _fmt(av.rsi, 2), av.faixa or "",
             av.maxima_15m, av.minima_15m, _fmt(av.tamanho_15m_pct, 4), av.setor or "inválida",
             av.sinal or "", av.alvo_texto, _fmt(av.latencia_ms, 0), _fmt(av.publicacao_binance_ms, 0),
-            "sim" if av.recuperada else "",
+            "sim" if av.recuperada else "", "" if av.ajuste_pct is None else f"{av.ajuste_pct:g}",
         ])
         self._arq.flush()
 
@@ -714,7 +722,7 @@ def _exemplos() -> list[Avaliacao]:
         sinal, alvo = cruzamento(faixa, setor, fech, p)
         casas = PARES[s]
         saida.append(Avaliacao(s, agora, fech, rsi, faixa, fech, fech, 0.3, setor, sinal, alvo,
-                               formatar_preco(alvo, casas), formatar_preco(fech, casas)))
+                               formatar_preco(alvo, casas), formatar_preco(fech, casas), ajuste_pct=p.ajuste_pct))
     return saida
 
 

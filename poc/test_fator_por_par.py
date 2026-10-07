@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-from alerta_futuros import PARES, Ativo, Parametros, Vela, cruzamento
+from alerta_futuros import PARES, Ativo, Parametros, Registro, Vela, cruzamento
 from campos_formulario import CampoInvalido, ajustes_dos_campos
 from configuracao import Configuracao, carregar, salvar, validar
 
@@ -49,9 +49,25 @@ class TestCalculoDoAlvo(unittest.TestCase):
             for k, fecha in enumerate((101.0, 102.0, 103.0)):
                 av = ativo.fechar_vela(Vela(base + k * 300_000, fecha - 1, fecha, fecha - 1, fecha))
             self.assertEqual(av.sinal, "X", simbolo)
+            self.assertEqual(av.ajuste_pct, 2.0 if simbolo == "ETHUSDT" else 0.5)  # vai pro pop-up e CSV
             alvos[simbolo] = av.alvo
         self.assertAlmostEqual(alvos["ETHUSDT"], 103.0 * 1.02)
         self.assertAlmostEqual(alvos["BTCUSDT"], 103.0 * 1.005)
+
+
+class TestRegistroCsv(unittest.TestCase):
+    def test_fator_do_par_vai_na_ultima_coluna(self):
+        from test_janela import _avaliacao
+        with TemporaryDirectory() as tmp:
+            registro = Registro(Path(tmp))
+            av = _avaliacao()
+            av.ajuste_pct = 0.8
+            registro.gravar(av)
+            registro.fechar()
+            cabecalho, linha = registro.caminho.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(cabecalho.split(";")[-1], "fator_pct")
+        self.assertEqual(cabecalho.split(";")[:14], Registro.CAMPOS[:14])  # colunas da 1.0 no mesmo lugar
+        self.assertEqual(linha.split(";")[-1], "0.8")
 
 
 class TestConfigJson(unittest.TestCase):
@@ -164,7 +180,7 @@ class TestJanelaComFatorPorPar(unittest.TestCase):
 
     def test_ok_e_iniciar_salvam_e_entregam_ao_motor(self):
         self.assertTrue(self.definir({"ETHUSDT": "0,8"}))
-        self.assertIn("1 par", self.app.link_ajustes.cget("text"))
+        self.assertIn("1 próprio", self.app.link_ajustes.cget("text"))
         self.app.iniciar()
         self.assertEqual(self.app.rotulo_erro.cget("text"), "")
         parametros = self.monitor.call_args[0][0]
@@ -175,7 +191,7 @@ class TestJanelaComFatorPorPar(unittest.TestCase):
     def test_sem_fator_proprio_e_a_1_0(self):
         self.app.iniciar()
         self.assertEqual(self.monitor.call_args[0][0].ajuste_por_par, {})
-        self.assertIn("diferente", self.app.link_ajustes.cget("text"))
+        self.assertEqual(self.app.link_ajustes.cget("text"), "Fator por par…")
 
     def test_valor_invalido_e_recusado_na_janelinha(self):
         for ruim in ("0", "-1", "abc", "150"):
@@ -214,11 +230,19 @@ class TestJanelaComFatorPorPar(unittest.TestCase):
         self.assertEqual(outro.entradas_ajuste["ETHUSDT"].get(), "0,8")
         self.assertEqual(outro.entradas_ajuste["BTCUSDT"].get(), "")
 
+    def test_exemplo_de_alerta_usa_o_fator_do_par(self):
+        self.definir({"BTCUSDT": "1"})
+        self.app.mostrar_exemplo()
+        av = self.app.popups.mostrar.call_args[0][0]
+        self.assertEqual(av.simbolo, "BTCUSDT")
+        self.assertEqual(av.ajuste_pct, 1.0)
+        self.assertAlmostEqual(av.alvo, av.fechamento * 1.01)
+
     def test_zoom_mantem_os_fatores(self):
         self.definir({"ETHUSDT": "0,8"})
         self.app.aplicar_zoom(1.5)
         self.assertEqual(self.app.ajustes, {"ETHUSDT": 0.8})
-        self.assertIn("1 par", self.app.link_ajustes.cget("text"))
+        self.assertIn("1 próprio", self.app.link_ajustes.cget("text"))
 
 
 def janela_cor_vermelha():
