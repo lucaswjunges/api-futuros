@@ -230,6 +230,22 @@ class TestJanelaComFatorPorPar(unittest.TestCase):
         self.assertEqual(outro.entradas_ajuste["ETHUSDT"].get(), "0,8")
         self.assertEqual(outro.entradas_ajuste["BTCUSDT"].get(), "")
 
+    def test_ok_ja_salva_sem_precisar_iniciar(self):
+        # teste manual de 07/10: OK, Sair, abrir de novo — o 0,8 tem que estar lá
+        from janela import Aplicativo
+        self.definir({"ETHUSDT": "0,8"})
+        self.assertEqual(carregar(self.caminho).parametros.ajuste_por_par, {"ETHUSDT": 0.8})
+        outro = Aplicativo(self.root, self.caminho)
+        outro.abrir_ajustes()
+        self.assertEqual(outro.entradas_ajuste["ETHUSDT"].get(), "0,8")
+        self.assertIn("1 próprio", outro.link_ajustes.cget("text"))
+
+    def test_ok_nao_salva_os_outros_campos_ainda_nao_iniciados(self):
+        self.app.entradas["ajuste_pct"].delete(0, "end")
+        self.app.entradas["ajuste_pct"].insert(0, "0,9")
+        self.definir({"ETHUSDT": "0,8"})
+        self.assertEqual(carregar(self.caminho).parametros.ajuste_pct, 0.5)
+
     def test_exemplo_de_alerta_usa_o_fator_do_par(self):
         self.definir({"BTCUSDT": "1"})
         self.app.mostrar_exemplo()

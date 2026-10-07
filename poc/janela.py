@@ -624,9 +624,22 @@ class Aplicativo:
             self.rotulo_erro_ajustes.config(text="\n".join(erros))
             return False
         self.ajustes = ajustes
+        self._salvar_ajustes()
         self._atualizar_link_ajustes()
         self.janela_ajustes.destroy()
         return True
+
+    def _salvar_ajustes(self) -> None:
+        """Grava os fatores já no OK, sem esperar o Iniciar. Achado no teste manual de 07/10: o
+        cliente põe 0,8, aperta OK, fecha o programa e espera encontrar o 0,8 ao abrir de novo —
+        "OK" numa janelinha de configuração significa "salvo". Só os fatores são gravados aqui; os
+        outros campos continuam valendo (e sendo salvos) no Iniciar, como na 1.0."""
+        self.config = replace(self.config,
+                              parametros=replace(self.config.parametros, ajuste_por_par=dict(self.ajustes)))
+        try:
+            salvar(self.config, self.caminho_config)
+        except OSError as e:
+            log.warning("Não foi possível salvar os fatores por par: %s", e)
 
     def _titulo(self, master: tk.Misc, texto: str, acima: int = 0) -> None:
         tk.Label(master, text=texto, bg=FUNDO, fg=TEXTO, font=self.tema.texto(10, "bold")).pack(
