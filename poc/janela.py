@@ -200,8 +200,8 @@ BANDEJA_HABILITADA = _bandeja_habilitada()
 # escopo da Opção A e da versão com IA) ainda é rascunho — ver aviso na própria página.
 URL_OUTRAS_VERSOES = "https://futuros.blumenauti.com.br/"
 
-# Quanto tempo a versão recém-instalada precisa ficar aberta antes de apagar as anteriores. Se ela
-# quebrar logo ao abrir, não chega aqui, e a anterior continua em "Versões anteriores" para voltar.
+# Quanto tempo a versão recém-instalada espera, depois de abrir, para apagar as versões guardadas
+# mais antigas que a imediatamente anterior (essa fica sempre, para o cliente poder voltar).
 ESPERA_LIMPEZA_MS = 60_000
 
 
@@ -1217,15 +1217,15 @@ class Aplicativo:
             self.perguntar_atualizacao()
 
     def _limpar_versoes_anteriores(self) -> None:
-        """Roda numa thread, ESPERA_LIMPEZA_MS depois de abrir: se chegou até aqui, a versão atual
-        funciona, e as anteriores guardadas na troca podem sair (o cliente fica só com a atual).
-        Se uma atualização estiver baixando agora, não mexe: o .part em andamento é dela."""
+        """Roda numa thread, ESPERA_LIMPEZA_MS depois de abrir: deixa em "Versões anteriores" só a
+        imediatamente anterior e apaga as mais antigas e restos de download. Se uma atualização
+        estiver baixando agora, não mexe: o .part em andamento é dela."""
         if self.atualizando:
             return
         apagados = atualizacao.limpar_versoes_anteriores(Path(sys.executable).parent,
                                                          pasta_configuracao() / "atualizacao")
         if apagados:
-            log.info("Versões anteriores removidas: %d arquivo(s).", apagados)
+            log.info("Versões antigas e restos de download removidos: %d arquivo(s).", apagados)
 
     def perguntar_atualizacao(self) -> None:
         p = self.atualizacao
@@ -1241,8 +1241,9 @@ class Aplicativo:
             "Nova versão do Alerta Futuros",
             f"Há uma versão nova do Alerta Futuros{nome}{quando}, inclusa no seu plano.{novidades}\n\n"
             "Atualizar agora? O programa baixa a versão nova, fecha e abre de novo sozinho — leva "
-            "menos de um minuto. Suas configurações continuam as mesmas, e a versão antiga é "
-            "removida assim que a nova abrir.",
+            "menos de um minuto. Suas configurações continuam as mesmas, e a versão que você usa "
+            "hoje fica guardada na pasta \"Versões anteriores\", ao lado do programa, caso queira "
+            "voltar a ela.",
             parent=self.root)
         if aceitou:
             self.iniciar_atualizacao()

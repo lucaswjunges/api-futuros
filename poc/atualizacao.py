@@ -15,10 +15,9 @@ Como funciona:
      caminho no Registro) e o hábito do cliente continuam valendo. Se algo falhar no meio, desfaz.
   5. Abre o .exe novo e fecha este (parando o monitor e fechando o CSV como no "Sair").
 
-Versão antiga: fica em "Versões anteriores" só até a nova provar que abre. Uns segundos depois de
-a versão nova subir normalmente, ela mesma apaga as anteriores (limpar_versoes_anteriores) — o
-cliente fica só com a versão atual, como num app moderno. Se a nova não chegar a abrir, a antiga
-continua lá para voltar manualmente.
+Versão antiga: a imediatamente anterior fica guardada em "Versões anteriores", para o cliente
+voltar sozinho se precisar. Uns segundos depois de a versão nova subir normalmente, ela apaga as
+MAIS ANTIGAS que essa (limpar_versoes_anteriores) — a pasta nunca passa de um arquivo.
 
 Planos (desde a 1.1): o versao.json pode trazer "planos": ["completa", ...]. A atualização só é
 instalada se o PLANO deste build estiver na lista (sem a chave = vale para todos, como até a 1.0).
@@ -220,30 +219,43 @@ def abrir_novo(caminho: Path) -> None:
     subprocess.Popen([str(caminho)], env=ambiente, cwd=str(caminho.parent), close_fds=True, **opcoes)
 
 
+def _ordem_da_guardada(arquivo: Path) -> tuple:
+    """Chave para achar a versão guardada mais recente: a versão do nome
+    ("AlertaFuturos-2026.09.24.2.exe" ou "... (2).exe") e, de desempate, a data do arquivo."""
+    nome = arquivo.stem.removeprefix("AlertaFuturos-").split(" (")[0]
+    try:
+        quando = arquivo.stat().st_mtime
+    except OSError:
+        quando = 0.0
+    return versao_como_tupla(nome), quando
+
+
 def limpar_versoes_anteriores(pasta_programa: Path, pasta_downloads: Path | None = None) -> int:
-    """Apaga os .exe guardados em "Versões anteriores" (e a pasta, se ficar vazia) e restos de
-    downloads (.part, .exe) da pasta de atualização. Chamado pela versão NOVA depois que ela já
-    abriu normalmente. Nunca levanta exceção: arquivo preso ou sem permissão fica para a próxima.
-    Devolve quantos arquivos apagou."""
+    """Deixa em "Versões anteriores" só a versão imediatamente anterior (a mais recente guardada)
+    e apaga as mais antigas e os restos de download (.part, .exe) da pasta de atualização.
+
+    Por que manter uma (decisão do Hugo em 07/10/2026): abrir não prova que a versão nova
+    funciona — a primeira avaliação real só acontece no próximo fechamento de 15 min — e o site
+    só oferece a versão mais nova. Com a anterior guardada, o cliente volta sozinho se precisar
+    (é o que o termo de aceite promete, item 3.5); com só uma, a pasta não acumula arquivos.
+
+    Chamado pela versão NOVA depois que ela já abriu normalmente. Nunca levanta exceção: arquivo
+    preso ou sem permissão fica para a próxima. Devolve quantos arquivos apagou."""
     apagados = 0
-    alvos = [pasta_programa / PASTA_ANTERIORES]
-    if pasta_downloads is not None:
-        alvos.append(pasta_downloads)
-    for pasta in alvos:
-        if not pasta.is_dir():
-            continue
-        for arquivo in pasta.iterdir():
-            if arquivo.is_file() and arquivo.suffix.lower() in (".exe", ".part"):
-                try:
-                    arquivo.unlink()
-                    apagados += 1
-                except OSError as e:
-                    log.info("Não foi possível apagar %s agora: %s", arquivo, e)
-        if pasta.name == PASTA_ANTERIORES:
-            try:
-                pasta.rmdir()  # só some se estiver vazia
-            except OSError:
-                pass
+    pasta_antigas = pasta_programa / PASTA_ANTERIORES
+    apagar: list[Path] = []
+    if pasta_antigas.is_dir():
+        guardadas = [a for a in pasta_antigas.iterdir() if a.is_file() and a.suffix.lower() == ".exe"]
+        guardadas.sort(key=_ordem_da_guardada)
+        apagar += guardadas[:-1]  # todas menos a mais recente
+    if pasta_downloads is not None and pasta_downloads.is_dir():
+        apagar += [a for a in pasta_downloads.iterdir() if a.is_file() and a.suffix.lower() in (".exe", ".part")]
+    for arquivo in apagar:
+        try:
+            arquivo.unlink()
+            apagados += 1
+        except OSError as e:
+            log.info("Não foi possível apagar %s agora: %s", arquivo, e)
     return apagados
 
 

@@ -61,7 +61,8 @@ ao lado do nome do par.
 
 Ao abrir, o programa confere se há versão nova. Se ela fizer parte do seu plano, basta clicar em
 **"Sim"**: ele baixa, confere o arquivo, fecha e abre de novo sozinho, com as mesmas
-configurações. A versão antiga é apagada assim que a nova abre normalmente. Versões de outros
+configurações. A versão anterior fica guardada na pasta **"Versões anteriores"**, ao lado do programa,
+para voltar a ela se precisar (só a última: as mais antigas são apagadas). Versões de outros
 planos não são instaladas — o programa só avisa que existem.
 
 ## 4. Ícone perto do relógio (bandeja)

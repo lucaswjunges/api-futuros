@@ -201,17 +201,41 @@ class TestPlanos(unittest.TestCase):
 
 
 class TestLimparVersoesAnteriores(unittest.TestCase):
-    def test_apaga_anteriores_e_restos_de_download(self):
+    def test_mantem_so_a_anterior_e_apaga_restos_de_download(self):
         programa, downloads = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
         anteriores = programa / atualizacao.PASTA_ANTERIORES
         anteriores.mkdir()
+        # versão no nome manda, não a ordem alfabética nem a data: 2026.10.7.x > 2026.9.30.x
+        (anteriores / "AlertaFuturos-2026.10.07.2.exe").write_bytes(b"MZ anterior")
         (anteriores / "AlertaFuturos-2026.09.24.2.exe").write_bytes(b"MZ")
         (anteriores / "AlertaFuturos-2026.10.01.1.exe").write_bytes(b"MZ")
-        (downloads / "AlertaFuturos-2026.10.07.1.part").write_bytes(b"x")
+        (downloads / "AlertaFuturos-2026.10.07.3.part").write_bytes(b"x")
         (programa / "AlertaFuturos.exe").write_bytes(b"MZ atual")
         self.assertEqual(atualizacao.limpar_versoes_anteriores(programa, downloads), 3)
-        self.assertFalse(anteriores.exists())
+        self.assertEqual([a.name for a in anteriores.iterdir()], ["AlertaFuturos-2026.10.07.2.exe"])
         self.assertEqual((programa / "AlertaFuturos.exe").read_bytes(), b"MZ atual")  # a atual fica
+        self.assertEqual(list(downloads.iterdir()), [])
+
+    def test_uma_so_guardada_nunca_e_apagada(self):
+        """O caso do Roberto na 1ª atualização: só a 2026.09.24.2 guardada — ela tem que ficar."""
+        programa = Path(tempfile.mkdtemp())
+        anteriores = programa / atualizacao.PASTA_ANTERIORES
+        anteriores.mkdir()
+        (anteriores / "AlertaFuturos-2026.09.24.2.exe").write_bytes(b"MZ")
+        self.assertEqual(atualizacao.limpar_versoes_anteriores(programa), 0)
+        self.assertTrue((anteriores / "AlertaFuturos-2026.09.24.2.exe").exists())
+
+    def test_mesma_versao_guardada_duas_vezes_fica_a_mais_nova(self):
+        import os
+        programa = Path(tempfile.mkdtemp())
+        anteriores = programa / atualizacao.PASTA_ANTERIORES
+        anteriores.mkdir()
+        velha, nova = anteriores / "AlertaFuturos-2026.10.07.2.exe", anteriores / "AlertaFuturos-2026.10.07.2 (2).exe"
+        velha.write_bytes(b"MZ")
+        nova.write_bytes(b"MZ")
+        os.utime(velha, (1_000_000, 1_000_000))
+        self.assertEqual(atualizacao.limpar_versoes_anteriores(programa), 1)
+        self.assertEqual([a.name for a in anteriores.iterdir()], [nova.name])
 
     def test_sem_nada_para_limpar(self):
         self.assertEqual(atualizacao.limpar_versoes_anteriores(Path(tempfile.mkdtemp())), 0)
@@ -229,6 +253,7 @@ class TestLimparVersoesAnteriores(unittest.TestCase):
         anteriores = programa / atualizacao.PASTA_ANTERIORES
         anteriores.mkdir()
         (anteriores / "AlertaFuturos-1.exe").write_bytes(b"MZ")
+        (anteriores / "AlertaFuturos-2.exe").write_bytes(b"MZ")
         with patch("pathlib.Path.unlink", side_effect=PermissionError("em uso")):
             self.assertEqual(atualizacao.limpar_versoes_anteriores(programa), 0)
 
