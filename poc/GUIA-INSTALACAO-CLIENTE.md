@@ -49,6 +49,22 @@ Se você digitar um símbolo que a Binance não tem (um erro de digitação, ou 
 de linha), o programa avisa na hora, com o nome do símbolo, em vez de ficar com uma linha
 parada no quadro sem explicação.
 
+## 3.2. Fator diferente para alguns pares (versão 1.1)
+
+O fator do preço-alvo (W/Z) vale para todos os pares. Para usar outro valor em algum deles,
+clique em **"Fator por par…"**, ao lado do título "Preço-alvo": abre uma janelinha com uma
+caixa para cada par. Escreva o fator nos pares que quiser e deixe os outros em branco (usam o
+geral). Clique em **OK**; vale a partir do próximo **"Iniciar"**. O pop-up mostra o fator usado
+ao lado do nome do par.
+
+## 3.3. Atualizações
+
+Ao abrir, o programa confere se há versão nova. Se ela fizer parte do seu plano, basta clicar em
+**"Sim"**: ele baixa, confere o arquivo, fecha e abre de novo sozinho, com as mesmas
+configurações. A versão anterior fica guardada na pasta **"Versões anteriores"**, ao lado do programa,
+para voltar a ela se precisar (só a última: as mais antigas são apagadas). Versões de outros
+planos não são instaladas — o programa só avisa que existem.
+
 ## 4. Ícone perto do relógio (bandeja)
 
 Ao fechar a janela (o X), o programa **não** encerra — ele continua rodando escondido, com um

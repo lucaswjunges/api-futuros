@@ -96,12 +96,17 @@ O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
 Desde 24/09/2026 o `.exe` confere, ao abrir, `https://futuros.blumenauti.com.br/versao.json` e,
 se houver versão mais nova, pergunta ao cliente se quer atualizar: baixa, confere SHA-256 e
 tamanho, guarda a versão atual em `Versões anteriores` (ao lado do `.exe`) e reabre sozinho
-(ver `atualizacao.py`). Para soltar uma versão:
+(ver `atualizacao.py`). Desde a 1.1 (07/10/2026), a versão nova apaga as anteriores 60 s depois de
+abrir normalmente (o cliente fica só com a atual) e o `versao.json` pode limitar a atualização a
+alguns planos (`--planos`): fora deles o app não instala, só avisa uma vez e leva a `/versoes`.
+Para soltar uma versão:
 
-1. Aumente `VERSAO` em `versao.py` (ano.mês.dia.sequência).
+1. Aumente `VERSAO` em `versao.py` (ano.mês.dia.sequência); `NOME_VERSAO` só muda de patamar
+   (1.1, 2.0…). `PLANO` é o plano deste build (hoje todos os clientes são `completa`).
 2. Feche o app (`Stop-Process -Name AlertaFuturos -ErrorAction SilentlyContinue`) e builde:
    `python -m PyInstaller AlertaFuturos.spec --noconfirm`.
-3. `python publicar_versao.py "o que mudou, numa frase"` → gera `dist\versao.json`.
+3. `python publicar_versao.py "o que mudou, numa frase"` → gera `dist\versao.json` (para todos os
+   planos). Versão só de um plano: `python publicar_versao.py "o que mudou" --planos completa`.
 4. Suba **juntos** `dist\AlertaFuturos.exe` → `/assets/AlertaFuturos.exe` e `dist\versao.json`
    → `/versao.json` no Cloudflare Pages. Se o SHA-256 do JSON não bater com o `.exe` publicado,
    os apps recusam o download (de propósito).

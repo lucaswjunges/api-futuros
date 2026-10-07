@@ -43,7 +43,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -90,9 +90,18 @@ class Parametros:
     rsi_abaixo: float = 5.0  # faixa "Abaixo": 0–5
     setor_pct: float = 30.0  # tamanho dos setores extremos A e C (% do tamanho da vela 15m)
     tamanho_min_pct: float = 0.020  # vela 15m válida se (Máx − Mín) / Mín > 0,020%
-    ajuste_pct: float = 0.5  # fator de ajuste do preço-alvo
+    ajuste_pct: float = 0.5  # fator de ajuste do preço-alvo GERAL (vale para quem não tem fator próprio)
     popup_segundos: int = 10
     velas_aquecimento: int = 300  # 25 h de velas 5m: RSI idêntico ao do gráfico desde o 1º minuto
+    # Fator próprio por par (pedido do cliente em 05/10/2026, versão 1.1): {"ETHUSDT": 0.8}. Par
+    # que não está aqui usa ajuste_pct. Vazio = comportamento idêntico ao da 1.0.
+    ajuste_por_par: dict[str, float] = field(default_factory=dict)
+
+    def ajuste_de(self, simbolo: str | None) -> float:
+        """Fator (%) usado para formar W e Z deste par: o próprio, se tiver, senão o geral."""
+        if simbolo is None:
+            return self.ajuste_pct
+        return self.ajuste_por_par.get(simbolo, self.ajuste_pct)
 
 
 @dataclass
@@ -122,6 +131,7 @@ class Avaliacao:
     latencia_ms: float | None = None
     publicacao_binance_ms: float | None = None  # evento Binance (E) − fechamento da vela
     recuperada: bool = False  # vela fechada durante queda de conexão, avaliada ao reconectar
+    ajuste_pct: float | None = None  # fator (%) deste par usado no Preço-Alvo (1.1: próprio ou o geral)
 
 
 # ─────────────────────────────── Lógica pura (testável) ───────────────────────────────
@@ -199,11 +209,14 @@ def setor_vela15(fechamento: float, maxima: float, minima: float, p: Parametros)
     return "B", tamanho_pct
 
 
-def cruzamento(faixa: str | None, setor: str | None, fechamento: float, p: Parametros) -> tuple[str, float] | None:
+def cruzamento(faixa: str | None, setor: str | None, fechamento: float, p: Parametros,
+               simbolo: str | None = None) -> tuple[str, float] | None:
+    """Sinal e preço-alvo. O fator é o do par (`simbolo`) se ele tiver um próprio, senão o geral."""
+    ajuste = p.ajuste_de(simbolo)
     if faixa == "ACIMA" and setor == "A":
-        return "X", fechamento * (1 + p.ajuste_pct / 100)  # Preço-Alvo W (verde)
+        return "X", fechamento * (1 + ajuste / 100)  # Preço-Alvo W (verde)
     if faixa == "ABAIXO" and setor == "C":
-        return "Y", fechamento * (1 - p.ajuste_pct / 100)  # Preço-Alvo Z (vermelho)
+        return "Y", fechamento * (1 - ajuste / 100)  # Preço-Alvo Z (vermelho)
     return None
 
 
@@ -290,7 +303,7 @@ class Ativo:
         minima = min(x.minima for x in na_janela)
         setor, tamanho_pct = setor_vela15(v.fecha, maxima, minima, self.p)
 
-        cruz = cruzamento(faixa, setor, v.fecha, self.p)
+        cruz = cruzamento(faixa, setor, v.fecha, self.p, self.simbolo)
         sinal, alvo = cruz if cruz else (None, None)
         return Avaliacao(
             simbolo=self.simbolo,
@@ -306,6 +319,7 @@ class Ativo:
             alvo=alvo,
             alvo_texto=formatar_preco(alvo, self.casas) if alvo is not None else "",
             fechamento_texto=formatar_preco(v.fecha, self.casas),
+            ajuste_pct=self.p.ajuste_de(self.simbolo),
         )
 
 
@@ -557,6 +571,12 @@ class Popups:
         canvas.create_text(largura - margem, px(20), text=f"fechou às {hora}", anchor="e", fill=TEXTO_FRACO,
                            font=self.tema.texto(8))
         canvas.create_text(margem, px(42), text=av.simbolo, anchor="w", fill=TEXTO, font=self.tema.numeros(12, "bold"))
+        if av.ajuste_pct is not None:
+            # 1.1: o fator deste par, à direita do nome — dá pra conferir W/Z de cabeça na hora
+            valor = canvas.create_text(largura - margem, px(42), text=f"{av.ajuste_pct:g}%".replace(".", ","),
+                                       anchor="e", fill=TEXTO, font=self.tema.numeros(9))
+            canvas.create_text(canvas.bbox(valor)[0] - px(4), px(42), text="fator", anchor="e", fill=TEXTO_FRACO,
+                               font=self.tema.texto(8))
         canvas.create_text(margem, px(70), text=f"{alvo} {av.alvo_texto}", anchor="w", fill=cor,
                            font=self.tema.numeros(24, "bold"))
         self._detalhes(canvas, margem, px(98), av)
@@ -621,7 +641,7 @@ class Popups:
 class Registro:
     CAMPOS = ["fechamento_5m", "par", "preco_fechamento", "rsi2", "faixa", "max_15m", "min_15m",
               "tamanho_15m_pct", "setor", "sinal", "preco_alvo", "latencia_ms", "publicacao_binance_ms",
-              "recuperada"]
+              "recuperada", "fator_pct"]  # fator_pct no fim (1.1): quem já lê o CSV por coluna não quebra
 
     def __init__(self, pasta: Path):
         pasta.mkdir(parents=True, exist_ok=True)
@@ -655,7 +675,7 @@ class Registro:
             f"{fech:%Y-%m-%d %H:%M}", av.simbolo, av.fechamento, _fmt(av.rsi, 2), av.faixa or "",
             av.maxima_15m, av.minima_15m, _fmt(av.tamanho_15m_pct, 4), av.setor or "inválida",
             av.sinal or "", av.alvo_texto, _fmt(av.latencia_ms, 0), _fmt(av.publicacao_binance_ms, 0),
-            "sim" if av.recuperada else "",
+            "sim" if av.recuperada else "", "" if av.ajuste_pct is None else f"{av.ajuste_pct:g}",
         ])
         self._arq.flush()
 
@@ -702,7 +722,7 @@ def _exemplos() -> list[Avaliacao]:
         sinal, alvo = cruzamento(faixa, setor, fech, p)
         casas = PARES[s]
         saida.append(Avaliacao(s, agora, fech, rsi, faixa, fech, fech, 0.3, setor, sinal, alvo,
-                               formatar_preco(alvo, casas), formatar_preco(fech, casas)))
+                               formatar_preco(alvo, casas), formatar_preco(fech, casas), ajuste_pct=p.ajuste_pct))
     return saida
 
 

@@ -15,8 +15,14 @@ Como funciona:
      caminho no Registro) e o hábito do cliente continuam valendo. Se algo falhar no meio, desfaz.
   5. Abre o .exe novo e fecha este (parando o monitor e fechando o CSV como no "Sair").
 
-A versão antiga fica guardada em "Versões anteriores" — era o que o Lucas pediu: se o cliente
-quiser voltar, é só abrir o arquivo de lá.
+Versão antiga: a imediatamente anterior fica guardada em "Versões anteriores", para o cliente
+voltar sozinho se precisar. Uns segundos depois de a versão nova subir normalmente, ela apaga as
+MAIS ANTIGAS que essa (limpar_versoes_anteriores) — a pasta nunca passa de um arquivo.
+
+Planos (desde a 1.1): o versao.json pode trazer "planos": ["completa", ...]. A atualização só é
+instalada se o PLANO deste build estiver na lista (sem a chave = vale para todos, como até a 1.0).
+Fora do plano, o app só avisa que existe uma versão nova e leva à página de versões — nunca instala
+algo que o cliente não comprou.
 
 Assinatura digital: o .exe continua sem certificado (decisão de 24/09: resolver na próxima
 versão). Um arquivo baixado pelo próprio app não recebe a marca "veio da internet" que o navegador
@@ -41,12 +47,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from versao import NOME_VERSAO, VERSAO
+from versao import NOME_VERSAO, PLANO, VERSAO
 
 log = logging.getLogger("alerta.atualizacao")
 
 URL_VERSAO = "https://futuros.blumenauti.com.br/versao.json"
 URL_PAGINA = "https://futuros.blumenauti.com.br/"
+URL_VERSOES = "https://futuros.blumenauti.com.br/versoes"
 DOMINIO_PERMITIDO = "https://futuros.blumenauti.com.br/"
 PASTA_ANTERIORES = "Versões anteriores"
 TAMANHO_MAXIMO = 80 * 1024 * 1024  # um .exe nosso tem ~21 MB; muito acima disso é erro
@@ -60,6 +67,8 @@ class Publicada:
     tamanho: int
     data: str = ""
     novidades: str = ""
+    nome: str = ""  # nome que o cliente vê ("1.1"); versao.json antigo não tem
+    planos: tuple[str, ...] = ()  # planos para os quais esta versão é inclusa; vazio = todos
 
 
 def versao_como_tupla(texto: str) -> tuple[int, ...]:
@@ -79,13 +88,28 @@ def eh_mais_nova(publicada: str, atual: str | None = None) -> bool:
     return bool(p) and bool(a) and p > a
 
 
+def _planos(valor) -> tuple[str, ...]:
+    if valor is None:
+        return ()
+    if not isinstance(valor, list) or not all(isinstance(x, str) and x.strip() for x in valor):
+        raise ValueError("planos inválidos")
+    return tuple(x.strip().lower() for x in valor)
+
+
+def incluida_no_plano(publicada: Publicada, plano: str | None = None) -> bool:
+    """True se esta versão é inclusa no plano deste build (instala com um clique); False se é de
+    outro plano (o app só mostra que existe e oferece conhecer). Lista vazia = todos os planos."""
+    return not publicada.planos or (plano or PLANO).lower() in publicada.planos
+
+
 def ler_publicada(dados: dict) -> Publicada:
     """Valida o versao.json. Levanta ValueError se faltar algo ou se a URL não for do nosso site
     (o app nunca baixa executável de outro endereço, mesmo que o JSON seja adulterado)."""
     try:
         p = Publicada(versao=str(dados["versao"]), url=str(dados["url"]),
                       sha256=str(dados["sha256"]).lower(), tamanho=int(dados["tamanho"]),
-                      data=str(dados.get("data", "")), novidades=str(dados.get("novidades", "")))
+                      data=str(dados.get("data", "")), novidades=str(dados.get("novidades", "")),
+                      nome=str(dados.get("nome", "")), planos=_planos(dados.get("planos")))
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"versao.json incompleto: {e}") from e
     if not versao_como_tupla(p.versao):
@@ -193,6 +217,46 @@ def abrir_novo(caminho: Path) -> None:
     if sys.platform == "win32":
         opcoes["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     subprocess.Popen([str(caminho)], env=ambiente, cwd=str(caminho.parent), close_fds=True, **opcoes)
+
+
+def _ordem_da_guardada(arquivo: Path) -> tuple:
+    """Chave para achar a versão guardada mais recente: a versão do nome
+    ("AlertaFuturos-2026.09.24.2.exe" ou "... (2).exe") e, de desempate, a data do arquivo."""
+    nome = arquivo.stem.removeprefix("AlertaFuturos-").split(" (")[0]
+    try:
+        quando = arquivo.stat().st_mtime
+    except OSError:
+        quando = 0.0
+    return versao_como_tupla(nome), quando
+
+
+def limpar_versoes_anteriores(pasta_programa: Path, pasta_downloads: Path | None = None) -> int:
+    """Deixa em "Versões anteriores" só a versão imediatamente anterior (a mais recente guardada)
+    e apaga as mais antigas e os restos de download (.part, .exe) da pasta de atualização.
+
+    Por que manter uma (decisão do Hugo em 07/10/2026): abrir não prova que a versão nova
+    funciona — a primeira avaliação real só acontece no próximo fechamento de 15 min — e o site
+    só oferece a versão mais nova. Com a anterior guardada, o cliente volta sozinho se precisar
+    (é o que o termo de aceite promete, item 3.5); com só uma, a pasta não acumula arquivos.
+
+    Chamado pela versão NOVA depois que ela já abriu normalmente. Nunca levanta exceção: arquivo
+    preso ou sem permissão fica para a próxima. Devolve quantos arquivos apagou."""
+    apagados = 0
+    pasta_antigas = pasta_programa / PASTA_ANTERIORES
+    apagar: list[Path] = []
+    if pasta_antigas.is_dir():
+        guardadas = [a for a in pasta_antigas.iterdir() if a.is_file() and a.suffix.lower() == ".exe"]
+        guardadas.sort(key=_ordem_da_guardada)
+        apagar += guardadas[:-1]  # todas menos a mais recente
+    if pasta_downloads is not None and pasta_downloads.is_dir():
+        apagar += [a for a in pasta_downloads.iterdir() if a.is_file() and a.suffix.lower() in (".exe", ".part")]
+    for arquivo in apagar:
+        try:
+            arquivo.unlink()
+            apagados += 1
+        except OSError as e:
+            log.info("Não foi possível apagar %s agora: %s", arquivo, e)
+    return apagados
 
 
 def disponivel_neste_ambiente() -> bool:
