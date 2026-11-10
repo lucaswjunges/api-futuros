@@ -53,6 +53,37 @@ class TestSalvarCarregar(unittest.TestCase):
             self.assertEqual(restantes, [caminho])
 
 
+class TestVelaEAvisoNaConfiguracao(unittest.TestCase):
+    """1.2 (pedido do cliente em 06/11/2026): vela de referência e modo do aviso são salvos; o
+    config.json da 1.1 (sem as chaves) abre já no padrão novo."""
+
+    def test_config_da_1_1_abre_com_vela_5_e_aviso_desligado(self):
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            # formato exato gravado pela 1.1: sem vela_min e sem popup_modo
+            caminho.write_text(json.dumps({"parametros": {"rsi_acima": 90.0, "popup_segundos": 10},
+                                           "iniciar_com_windows": True, "pares": ["BTCUSDT"]}), encoding="utf-8")
+            lido = carregar(caminho)
+            self.assertEqual((lido.parametros.vela_min, lido.parametros.popup_modo), (5, "desligado"))
+            self.assertTrue(lido.iniciar_com_windows)
+
+    def test_ida_e_volta_preserva_a_escolha_do_cliente(self):
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            salvar(Configuracao(parametros=Parametros(vela_min=15, popup_modo="fixo")), caminho)
+            lido = carregar(caminho)
+            self.assertEqual((lido.parametros.vela_min, lido.parametros.popup_modo), (15, "fixo"))
+
+    def test_valor_estranho_volta_ao_padrao_sem_perder_o_resto(self):
+        with TemporaryDirectory() as tmp:
+            caminho = Path(tmp) / "config.json"
+            caminho.write_text(json.dumps({"parametros": {"vela_min": 7, "popup_modo": "piscando",
+                                                          "rsi_acima": 93.0}}), encoding="utf-8")
+            lido = carregar(caminho)
+            self.assertEqual((lido.parametros.vela_min, lido.parametros.popup_modo), (5, "desligado"))
+            self.assertEqual(lido.parametros.rsi_acima, 93.0)
+
+
 class TestParesNaConfiguracao(unittest.TestCase):
     """A lista de pares passou a ser salva em 23/09/2026, quando o teto subiu de 8 para 16."""
 

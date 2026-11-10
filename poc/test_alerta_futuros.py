@@ -23,6 +23,7 @@ from alerta_futuros import (
     cruzamento,
     faixa_rsi,
     fecha_vela_15m,
+    fecha_vela_referencia,
     formatar_preco,
     pares_desconhecidos,
     resolver_pares,
@@ -30,6 +31,7 @@ from alerta_futuros import (
 )
 
 P = Parametros()
+P15 = Parametros(vela_min=15)  # comportamento da 1.0/1.1: vela de 15 min e captação em :00/:15/:30/:45
 
 
 class TestCasasDecimais(unittest.TestCase):
@@ -218,14 +220,26 @@ def _vela(minuto: int, maxima: float, minima: float, fecha: float) -> Vela:
 
 class TestAtivo(unittest.TestCase):
     def test_vela_15m_agrega_somente_a_janela_atual(self):
-        ativo = Ativo("BTCUSDT", 2, P)
+        ativo = Ativo("BTCUSDT", 2, P15)
         ativo.carregar_historico([_vela(0, 105, 95, 100), _vela(5, 120, 99, 110)])
         # 10:10 fecha a janela 10:00–10:15: Máx 120, Mín 95 -> tamanho 25 -> A >= 112,5
         av = ativo.fechar_vela(_vela(10, 118, 108, 115))
-        self.assertEqual((av.maxima_15m, av.minima_15m, av.setor), (120, 95, "A"))
+        self.assertEqual((av.maxima_vela, av.minima_vela, av.setor), (120, 95, "A"))
         # 10:15 abre nova janela: só a própria vela conta
         av = ativo.fechar_vela(_vela(15, 116, 112, 112.5))
-        self.assertEqual((av.maxima_15m, av.minima_15m, av.setor), (116, 112, "C"))
+        self.assertEqual((av.maxima_vela, av.minima_vela, av.setor), (116, 112, "C"))
+        self.assertEqual(av.vela_min, 15)
+
+    def test_vela_5m_usa_so_a_propria_vela(self):
+        """1.2 (pedido do cliente em 06/11/2026): setor e tamanho mínimo na vela de 5 min que fechou,
+        sem agregar as anteriores — mesmo histórico do teste da vela de 15m acima, resultado outro."""
+        ativo = Ativo("BTCUSDT", 2, P)
+        ativo.carregar_historico([_vela(0, 105, 95, 100), _vela(5, 120, 99, 110)])
+        # só 10:10: Máx 118, Mín 108 -> tamanho 10 -> A >= 115 (com 15m seria A >= 112,5 sobre 95–120)
+        av = ativo.fechar_vela(_vela(10, 118, 108, 115))
+        self.assertEqual((av.maxima_vela, av.minima_vela, av.setor, av.vela_min), (118, 108, "A", 5))
+        av = ativo.fechar_vela(_vela(15, 116, 112, 112.5))
+        self.assertEqual((av.maxima_vela, av.minima_vela, av.setor), (116, 112, "C"))
 
     def test_sinal_completo(self):
         ativo = Ativo("ETHUSDT", 2, P)
@@ -264,7 +278,7 @@ class TestCaptacao15m(unittest.TestCase):
 
     def test_monitor_so_capta_avaliacoes_nos_fechamentos_de_15m(self):
         avaliadas = []
-        monitor = Monitor(P, avaliadas.append, pares={"BTCUSDT": 2})
+        monitor = Monitor(P15, avaliadas.append, pares={"BTCUSDT": 2})
         monitor.ativos["BTCUSDT"].carregar_historico([_vela(0, 101, 99, 100), _vela(5, 102, 100, 101)])
 
         asyncio.run(monitor._vela_fechada(_kline("BTCUSDT", 10, 101, 110, 101, 110), None, 0))  # 10:15 — captado
@@ -276,10 +290,32 @@ class TestCaptacao15m(unittest.TestCase):
         self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 20 * 60_000)
 
 
-class TestRecuperacaoAposQueda(unittest.TestCase):
-    def _monitor(self, lotes):
+class TestCaptacao5m(unittest.TestCase):
+    """1.2 (pedido do cliente em 06/11/2026: "tudo só em 5 min"): com a vela de referência de 5 min
+    todo fechamento é captado; a de 15 min continua disponível e se comporta como na 1.1."""
+
+    def test_padrao_da_1_2_e_vela_de_5_min_sem_popup(self):
+        self.assertEqual((Parametros().vela_min, Parametros().popup_modo), (5, "desligado"))
+
+    def test_fecha_vela_referencia(self):
+        for minuto in range(0, 60, 5):
+            self.assertTrue(fecha_vela_referencia(minuto * 60_000, 5))
+            self.assertEqual(fecha_vela_referencia(minuto * 60_000, 15), fecha_vela_15m(minuto * 60_000))
+
+    def test_monitor_capta_todo_fechamento_de_5m(self):
         avaliadas = []
         monitor = Monitor(P, avaliadas.append, pares={"BTCUSDT": 2})
+        monitor.ativos["BTCUSDT"].carregar_historico([_vela(0, 101, 99, 100), _vela(5, 102, 100, 101)])
+        for minuto, preco in ((10, 110), (15, 111), (20, 112)):
+            asyncio.run(monitor._vela_fechada(_kline("BTCUSDT", minuto, preco - 1, preco, preco - 1, preco), None, 0))
+        self.assertEqual([a.abertura_ms for a in avaliadas], [10 * 60_000, 15 * 60_000, 20 * 60_000])
+        self.assertTrue(all(a.vela_min == 5 for a in avaliadas))
+
+
+class TestRecuperacaoAposQueda(unittest.TestCase):
+    def _monitor(self, lotes, p=P15):
+        avaliadas = []
+        monitor = Monitor(p, avaliadas.append, pares={"BTCUSDT": 2})
         monitor._baixar_velas = lambda _simbolo, _antes=None: lotes.pop(0)
         return monitor, avaliadas
 
@@ -301,6 +337,14 @@ class TestRecuperacaoAposQueda(unittest.TestCase):
         self.assertTrue(all(a.recuperada for a in avaliadas))
         # o RSI(2) e o histórico de velas avançaram pelas 3, mesmo as 2 não captadas
         self.assertEqual(monitor.ativos["BTCUSDT"].ultima_abertura, 40 * 60_000)
+
+    def test_com_vela_de_5m_todas_as_velas_da_queda_sao_avaliadas(self):
+        historico = [_vela(m, 101, 99, 100) for m in range(0, 30, 5)]
+        durante_queda = [_vela(30, 110, 100, 110), _vela(35, 111, 109, 111), _vela(40, 112, 108, 112)]
+        monitor, avaliadas = self._monitor([historico, historico + durante_queda], p=P)
+        asyncio.run(monitor._recuperar("BTCUSDT"))
+        asyncio.run(monitor._recuperar("BTCUSDT"))
+        self.assertEqual([a.abertura_ms for a in avaliadas], [30 * 60_000, 35 * 60_000, 40 * 60_000])
 
     def test_queda_maior_que_o_historico_nao_avalia_velas_antigas(self):
         monitor, avaliadas = self._monitor([[_vela(0, 1, 1, 1)], [_vela(m, 1, 1, 1) for m in range(600, 700, 5)]])
@@ -328,6 +372,17 @@ class TestRegistro(unittest.TestCase):
             registro.fechar()
             registro.gravar(self._avaliacao())  # antes do fix: ValueError na thread do motor
             self.assertEqual(registro.caminho.read_text(encoding="utf-8").count("BTCUSDT"), 1)
+
+    def test_csv_da_1_2_mantem_as_posicoes_e_diz_a_vela(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            registro = Registro(Path(pasta))
+            registro.gravar(self._avaliacao())
+            registro.fechar()
+            cabecalho, linha = registro.caminho.read_text(encoding="utf-8").splitlines()
+        colunas = cabecalho.split(";")
+        self.assertEqual(colunas[5:8], ["max_vela", "min_vela", "tamanho_vela_pct"])  # mesmas posições da 1.1
+        self.assertEqual(colunas[-2:], ["fator_pct", "vela_min"])
+        self.assertEqual(linha.split(";")[-1], "15")
 
     def test_fechar_duas_vezes_e_inofensivo(self):
         with tempfile.TemporaryDirectory() as pasta:

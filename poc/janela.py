@@ -92,22 +92,39 @@ PASTA_LOGS = _pasta_logs()
 SEGUNDOS_CONEXAO_DEMORADA = 30
 
 
+def texto_avaliacoes(vela_min: int) -> str:
+    """Quando o quadro muda, dito em uma linha (rodapé do bloco de status com o monitor parado)."""
+    if vela_min == 15:
+        return "Avaliações às :00, :15, :30 e :45."
+    return f"Avaliações a cada {vela_min} minutos."
+
+
+def rotulos_popup(segundos: int) -> dict[str, str]:
+    """modo do aviso (MODOS_POPUP) -> texto do menu "Aviso na tela" (1.2)."""
+    return {"desligado": "não mostrar", "temporario": f"some em {segundos} s", "fixo": "fica até eu fechar"}
+
+
 def mensagens_de_status(chave: str, n_pares: int, ultima: str | None, demorando: bool,
-                        reconexoes: int) -> tuple[str, str]:
+                        reconexoes: int, vela_min: int = 15, aviso_na_tela: bool = True) -> tuple[str, str]:
     """(título, orientação) do bloco de status, a partir da chave de estado_do_monitor().
 
     Existe porque o indicador sozinho ("Conectado") não responde à dúvida que o teste de
     usabilidade de 21/09/2026 mostrou ser a principal: "está funcionando ou travou?". O quadro só
     muda nos fechamentos de 15 min e pode passar horas sem sinal — então o texto diz, em cada
-    estado, o que está acontecendo e o que esperar. Nunca promete sinal."""
+    estado, o que está acontecendo e o que esperar. Nunca promete sinal.
+
+    1.2: `vela_min` (5 ou 15) muda o intervalo citado; com `aviso_na_tela` falso (aviso
+    desligado, padrão da 1.2) o texto diz que o sinal aparece no quadro, não num aviso."""
     pares = "1 par" if n_pares == 1 else f"{n_pares} pares"
     if chave == "conectado":
+        onde = "o aviso" if aviso_na_tela else "o sinal no quadro"
         if ultima is None:
             return (f"Monitoramento ativo · {pares}",
-                    "Tudo pronto. O quadro é preenchido no próximo fechamento de 15 minutos. "
-                    "Um aviso só aparece se a regra acontecer.")
+                    f"Tudo pronto. O quadro é preenchido no próximo fechamento de {vela_min} minutos. "
+                    + ("Um aviso só aparece se a regra acontecer." if aviso_na_tela else
+                       "Se a regra acontecer, o sinal aparece no quadro (o aviso na tela está desligado)."))
         return (f"Monitoramento ativo · {pares}",
-                f"Última avaliação às {ultima}. \u201cSem sinal\u201d é normal — o aviso só aparece "
+                f"Última avaliação às {ultima}. \u201cSem sinal\u201d é normal — {onde} só aparece "
                 "quando as duas condições coincidem.")
     if chave == "reconectando":
         return ("Sem conexão · tentando de novo",
@@ -155,13 +172,19 @@ TEXTO_COMO_USAR = """O que o aplicativo faz
 Acompanha dados públicos dos pares da Binance Futuros que estão na lista e mostra um aviso no canto da tela quando a sua regra acontece. Não pede senha, não acessa conta e não compra nem vende nada.
 
 Cliquei em Iniciar. E agora?
-Primeiro ele conecta e busca o histórico recente de cada par (alguns segundos). Quando aparecer "Monitoramento ativo", é só aguardar: a regra é conferida nos fechamentos de 15 minutos — :00, :15, :30 e :45. O quadro começa vazio e se preenche no primeiro fechamento.
+Primeiro ele conecta e busca o histórico recente de cada par (alguns segundos). Quando aparecer "Monitoramento ativo", é só aguardar: a regra é conferida a cada fechamento da vela escolhida — de 5 em 5 minutos com a vela de 5 minutos, ou às :00, :15, :30 e :45 com a de 15. O quadro começa vazio e se preenche no primeiro fechamento.
+
+Vela de 5 ou de 15 minutos
+O título da vela mostra qual está valendo; o link ao lado dele troca. É nessa vela que se medem os setores A, B e C e o tamanho mínimo. O RSI(2) é sempre o da vela de 5 minutos. Vale no próximo Iniciar.
 
 Passou um fechamento e não apareceu aviso. Travou?
 Provavelmente não. Avaliar não é o mesmo que dar sinal: se as duas condições não coincidirem, a linha do par mostra "sem sinal". Confira o status, a hora da última avaliação e a barra — enquanto ela avança até o próximo fechamento, o app está trabalhando. Horas sem nenhum aviso podem ser normais.
 
 Como é um aviso?
 Clique em "Ver exemplo de alerta". O exemplo é uma simulação: aparece no mesmo canto e do mesmo jeito que um aviso real, mas não entra no histórico. W (verde) = alvo acima do fechamento; Z (vermelho) = alvo abaixo.
+
+Aviso na tela
+Em "Aviso na tela" você escolhe: não mostrar (o sinal fica só no quadro, com a linha colorida, e no histórico), some em 10 s, ou fica até eu fechar (some com um clique). Vale no próximo Iniciar.
 
 Trocar ou acrescentar moedas
 No campo "Pares acompanhados", escreva os símbolos como aparecem na Binance (ex.: BTCUSDT), separados por espaço ou vírgula — até 16. Vale no próximo Iniciar. Se um símbolo não existir em Futuros, a janela avisa qual é.
@@ -281,6 +304,11 @@ class Aplicativo:
         # como os outros campos. Fica fora dos widgets pra sobreviver à remontagem do zoom.
         self.ajustes: dict[str, float] = dict(self.config.parametros.ajuste_por_par)
         self.janela_ajustes: tk.Toplevel | None = None
+        # 1.2: vela de referência (5/15 min) e modo do aviso. Também ficam fora dos widgets pelo
+        # mesmo motivo (zoom) e só valem no próximo Iniciar, como os campos.
+        self.vela_min: int = self.config.parametros.vela_min
+        self._rotulos_popup = rotulos_popup(self.config.parametros.popup_segundos)
+        self.var_popup = tk.StringVar(value=self._rotulos_popup[self.config.parametros.popup_modo])
         self._laco: str | None = None
         # tela cheia: zoom atual, tamanho natural do conteúdo (medido com zoom 1) e a última
         # avaliação de cada par (pra redesenhar o quadro quando a janela é refeita no novo zoom)
@@ -291,7 +319,7 @@ class Aplicativo:
         self._montar(root)
         self._medir_base()
         root.bind("<F11>", lambda _e: self.alternar_tela_cheia())
-        self.popups = Popups(root, self.config.parametros.popup_segundos)
+        self.popups = Popups(root, self._duracao_popup(self.config.parametros.popup_modo))
         self._configurar_bandeja(root)
         # o laço roda sempre (não só com o motor vivo): é ele que percebe o motor morrer sozinho e
         # devolve a janela ao estado "pode iniciar de novo"
@@ -458,7 +486,17 @@ class Aplicativo:
         grupo.pack(fill="x", pady=(px(10), 0))
         coluna = tk.Frame(grupo, bg=FUNDO)
         coluna.pack(side="left")
-        self._titulo(coluna, "Vela de 15 minutos")
+        # 1.2: o título diz qual vela vale e o link ao lado troca (5 <-> 15 min) — na mesma linha,
+        # pelo mesmo motivo do "Fator por par…": num notebook de 768 px não sobra altura.
+        linha_vela = tk.Frame(coluna, bg=FUNDO)
+        linha_vela.pack(fill="x")
+        self.rotulo_titulo_vela = tk.Label(linha_vela, text="", bg=FUNDO, fg=TEXTO, font=tema.texto(10, "bold"))
+        self.rotulo_titulo_vela.pack(side="left", pady=(0, px(2)))
+        self.link_vela = tk.Label(linha_vela, text="", bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(9, "underline"),
+                                  cursor="hand2")
+        self.link_vela.pack(side="left", padx=(px(10), 0), pady=(0, px(2)))
+        self.link_vela.bind("<Button-1>", lambda _evt: self.trocar_vela())
+        self._atualizar_vela()
         frase = self._frase(coluna)
         self._palavras(frase, "Setores A e C:")
         self._campo(frase, "setor_pct", textos)
@@ -487,12 +525,55 @@ class Aplicativo:
 
         self._montar_campo_pares(regra)
 
-        tk.Checkbutton(regra, text="Iniciar junto com o Windows", variable=self.var_iniciar_windows,
+        linha_opcoes = tk.Frame(regra, bg=FUNDO)
+        linha_opcoes.pack(fill="x", pady=(px(12), 0))
+        tk.Checkbutton(linha_opcoes, text="Iniciar junto com o Windows", variable=self.var_iniciar_windows,
                        bg=FUNDO, fg=TEXTO, selectcolor=CAMPO, activebackground=FUNDO, activeforeground=TEXTO,
-                       highlightthickness=0, font=tema.texto(10)).pack(anchor="w", pady=(px(12), 0))
+                       highlightthickness=0, font=tema.texto(10)).pack(side="left")
+        self._montar_menu_popup(linha_opcoes)
         if sys.platform != "win32":
             tk.Label(regra, text="(disponível só no Windows)", bg=FUNDO, fg=TEXTO_APAGADO,
                      font=tema.texto(8)).pack(anchor="w", padx=(px(24), 0))
+
+    def _montar_menu_popup(self, linha: tk.Frame) -> None:
+        """"Aviso na tela" (1.2, pedido do cliente em 06/11/2026): não mostrar (padrão), some em
+        10 s (como na 1.1) ou fica até fechar. Menu e não três botões de opção: cabe à direita do
+        "Iniciar junto com o Windows" sem acrescentar linha nenhuma à janela."""
+        px, tema = self.tema.px, self.tema
+        self.menu_popup = tk.OptionMenu(linha, self.var_popup, *self._rotulos_popup.values())
+        self.menu_popup.configure(bg=CAMPO, fg=TEXTO, activebackground=PAINEL, activeforeground=TEXTO,
+                                  highlightthickness=1, highlightbackground=BORDA, relief="flat", bd=0,
+                                  font=tema.texto(9), padx=px(6), pady=px(2), indicatoron=True,
+                                  disabledforeground=TEXTO_APAGADO)
+        self.menu_popup["menu"].configure(bg=CAMPO, fg=TEXTO, activebackground=OURO,
+                                          activeforeground=OURO_TEXTO, font=tema.texto(9))
+        self.menu_popup.pack(side="right")
+        tk.Label(linha, text="Aviso na tela:", bg=FUNDO, fg=TEXTO_FRACO, font=tema.texto(10)).pack(
+            side="right", padx=(px(12), px(6)))
+
+    def _modo_popup(self) -> str:
+        """Modo escolhido no menu (texto -> chave de MODOS_POPUP)."""
+        por_texto = {texto: modo for modo, texto in self._rotulos_popup.items()}
+        return por_texto.get(self.var_popup.get(), "desligado")
+
+    def _duracao_popup(self, modo: str) -> int | None:
+        """Segundos do aviso para Popups: None = fica até o clique (modo "fixo")."""
+        return None if modo == "fixo" else self.config.parametros.popup_segundos
+
+    def _atualizar_vela(self) -> None:
+        travado = self.sessao_ativa
+        outra = 15 if self.vela_min == 5 else 5
+        self.rotulo_titulo_vela.config(text=f"Vela de {self.vela_min} minutos")
+        self.link_vela.config(text=f"usar a de {outra} min", fg=TEXTO_APAGADO if travado else TEXTO_FRACO,
+                              cursor="" if travado else "hand2")
+
+    def trocar_vela(self) -> None:
+        """Link ao lado do título: alterna 5 <-> 15 min. Vale no próximo Iniciar, como os campos;
+        travado com o monitor rodando."""
+        if self.sessao_ativa:
+            return
+        self.vela_min = 15 if self.vela_min == 5 else 5
+        self._atualizar_vela()
 
     def _montar_campo_pares(self, regra: tk.Frame) -> None:
         """Lista de pares acompanhados — editável desde 23/09/2026, quando o teto subiu de 8 para
@@ -717,7 +798,7 @@ class Aplicativo:
         self.barra_espera.pack(fill="x", pady=(px(9), px(5)))
         linha = tk.Frame(caixa, bg=PAINEL)
         linha.pack(fill="x")
-        self.rotulo_proxima = tk.Label(linha, text="Avaliações às :00, :15, :30 e :45.", bg=PAINEL, fg=TEXTO_FRACO,
+        self.rotulo_proxima = tk.Label(linha, text=texto_avaliacoes(self.vela_min), bg=PAINEL, fg=TEXTO_FRACO,
                                        font=tema.texto(9), anchor="w")
         self.rotulo_proxima.pack(side="left")
         tk.Checkbutton(linha, text="Reduzir movimento", variable=self.reduzir_movimento,
@@ -807,7 +888,10 @@ class Aplicativo:
         sinal, alvo = cruzamento(av.faixa, av.setor, av.fechamento, p, av.simbolo)
         av = replace(av, sinal=sinal, alvo=alvo, ajuste_pct=p.ajuste_de(av.simbolo),
                      alvo_texto=formatar_preco(alvo, PARES.get(av.simbolo, 4)))
-        self.popups.mostrar(av, titulo="SIMULAÇÃO · exemplo, não é sinal real")
+        # com o aviso desligado o exemplo aparece mesmo assim (é pra ver como seria), e some sozinho
+        modo = self._modo_popup()
+        duracao = None if modo == "fixo" else self.config.parametros.popup_segundos
+        self.popups.mostrar(av, titulo="SIMULAÇÃO · exemplo, não é sinal real", segundos=duracao)
 
     def mostrar_ajuda(self) -> None:
         if self.janela_ajuda is not None and self.janela_ajuda.winfo_exists():
@@ -881,7 +965,9 @@ class Aplicativo:
                            highlightbackground=BORDA if habilitar else LINHA)
         self.entrada_pares.config(state="normal" if habilitar else "disabled",
                                   highlightbackground=BORDA if habilitar else LINHA)
+        self.menu_popup.config(state="normal" if habilitar else "disabled")
         self._atualizar_link_ajustes()
+        self._atualizar_vela()
 
     def _marcar_erro(self, campo: str, com_erro: bool) -> None:
         cor = VERMELHO if com_erro else BORDA
@@ -913,7 +999,8 @@ class Aplicativo:
         pares = self._ler_pares()
         # fator próprio só dos pares que estão na lista: se um par saiu, o fator dele sai junto
         self.ajustes = {s: v for s, v in self.ajustes.items() if s in pares}
-        parametros = replace(parametros, ajuste_por_par=dict(self.ajustes))
+        parametros = replace(parametros, ajuste_por_par=dict(self.ajustes), vela_min=self.vela_min,
+                             popup_modo=self._modo_popup())
         erros = validar(parametros)
         erros_pares = validar_pares(pares)
         if not erros_pares:
@@ -938,6 +1025,7 @@ class Aplicativo:
         self._aplicar_inicio_automatico()
         self._parametros_desenho = parametros
         self.diagrama.atualizar(parametros.setor_pct)
+        self.popups.segundos = self._duracao_popup(parametros.popup_modo)
         if mudou_pares:
             self._reconstruir_quadro()  # uma linha por par: lista nova = quadro novo
         self.painel.definir_faixas(parametros.rsi_abaixo, parametros.rsi_acima)
@@ -982,7 +1070,7 @@ class Aplicativo:
         self.rotulo_rodape.config(text=self._texto_rodape_parado())
         self.rotulo_status.config(text="Monitoramento parado", fg=TEXTO)
         self.rotulo_orientacao.config(text="Nenhum aviso novo será mostrado. Clique em Iniciar para retomar.")
-        self.rotulo_proxima.config(text="Avaliações às :00, :15, :30 e :45.")
+        self.rotulo_proxima.config(text=texto_avaliacoes(self.vela_min))
         self.barra_espera.parado()
 
     def _recolher_regra(self, recolher: bool) -> None:
@@ -994,9 +1082,9 @@ class Aplicativo:
             n = len(p.ajuste_por_par)
             proprios = "" if not n else f" (próprio em {'1 par' if n == 1 else f'{n} pares'})"
             self.rotulo_regra_resumida.config(
-                text=f"Regra: RSI(2) até {num(p.rsi_abaixo)} ou a partir de {num(p.rsi_acima)} · setores "
-                     f"{num(p.setor_pct)}% · alvo {num(p.ajuste_pct)}%{proprios} — pare o monitoramento "
-                     "para editar.")
+                text=f"Regra: RSI(2) até {num(p.rsi_abaixo)} ou a partir de {num(p.rsi_acima)} · vela "
+                     f"{p.vela_min} min · setores {num(p.setor_pct)}% · alvo {num(p.ajuste_pct)}%{proprios} · "
+                     f"aviso: {self._rotulos_popup[p.popup_modo]} — pare o monitoramento para editar.")
             self.frame_regra.pack_forget()
             self.rotulo_regra_resumida.pack(fill="x", pady=(self.tema.px(10), 0), before=self.frame_acoes)
         else:
@@ -1015,7 +1103,7 @@ class Aplicativo:
         self._recolher_regra(False)
         self.indicador.definir("encerrado", "Encerrado")
         self._atualizar_status("encerrado")
-        self.rotulo_proxima.config(text="Avaliações às :00, :15, :30 e :45.")
+        self.rotulo_proxima.config(text=texto_avaliacoes(self.vela_min))
         self.rotulo_rodape.config(text=self._texto_rodape_parado())
         self.barra_espera.parado()
 
@@ -1054,7 +1142,8 @@ class Aplicativo:
                 self.ultima_avaliacao = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000).strftime("%H:%M")
             except (OverflowError, OSError, ValueError):
                 pass
-            if av.sinal and (av.latencia_ms or 0) < ATRASO_MAX_POPUP_MS:
+            if (av.sinal and (av.latencia_ms or 0) < ATRASO_MAX_POPUP_MS
+                    and self.config.parametros.popup_modo != "desligado"):
                 self.popups.mostrar(av)
         while not self.erros_motor.empty():
             self.rotulo_erro.config(text=self.erros_motor.get_nowait())
@@ -1152,8 +1241,9 @@ class Aplicativo:
     def _atualizar_status(self, chave: str) -> None:
         demorando = time.monotonic() - self.inicio_sessao > SEGUNDOS_CONEXAO_DEMORADA
         reconexoes = self.monitor.reconexoes if self.monitor else 0
+        p = self.config.parametros
         titulo, orientacao = mensagens_de_status(chave, len(self.config.pares), self.ultima_avaliacao,
-                                                 demorando, reconexoes)
+                                                 demorando, reconexoes, p.vela_min, p.popup_modo != "desligado")
         cor = {"conectado": CIANO, "encerrado": VERMELHO, "conectando": OURO, "reconectando": OURO}.get(chave, TEXTO)
         if chave == "conectando" and not demorando:
             cor = TEXTO
@@ -1163,7 +1253,7 @@ class Aplicativo:
             self.rotulo_resumo.config(text=f"Nesta sessão: {self.avaliacoes} avaliações · {self.sinais} sinais")
         agora = datetime.now()
         if chave == "conectado":
-            proxima = proxima_avaliacao(agora)
+            proxima = proxima_avaliacao(agora, self.config.parametros.vela_min)
             texto = f"Próxima avaliação às {proxima:%H:%M} · em {contagem_regressiva(agora, proxima)}"
             self.rotulo_proxima.config(text=texto)
             self.rotulo_rodape.config(text=f"Próxima avaliação às {proxima:%H:%M}.")
@@ -1173,13 +1263,13 @@ class Aplicativo:
 
     def _atualizar_barra(self, chave: str | None = None) -> None:
         """Conectando/reconectando: animação (a não ser com "Reduzir movimento"). Conectado: barra
-        enche até o próximo fechamento de 15 min — o tempo, não a chance de sinal."""
+        enche até o próximo fechamento da vela (5 ou 15 min) — o tempo, não a chance de sinal."""
         if chave is None:
             chave = self.indicador.chave
         if not self.sessao_ativa:
             self.barra_espera.parado()
         elif chave == "conectado":
-            self.barra_espera.progresso(fracao_do_intervalo(datetime.now()))
+            self.barra_espera.progresso(fracao_do_intervalo(datetime.now(), self.config.parametros.vela_min))
         elif self.reduzir_movimento.get():
             self.barra_espera.parado()
         else:
