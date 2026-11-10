@@ -2,14 +2,15 @@
 
 Prova de conceito do app de alertas: lê **somente dados públicos** da Binance Futuros
 (sem conta, sem API key, sem ordens), avalia a regra do cliente a cada fechamento de
-vela de 5 minutos e mostra um pop-up por 10 s quando há cruzamento verdadeiro.
+vela de 5 minutos e marca o sinal no quadro e no CSV quando há cruzamento verdadeiro. O aviso na
+tela (pop-up) é opcional desde a 1.2: desligado (padrão), some em 10 s ou fica até o clique.
 
 ## Regra implementada
 
 | Etapa | Regra |
 |---|---|
 | Condição 1 | RSI(2) de Wilder no fechamento da vela 5m: `≥ 90` → **Acima** · `≤ 5` → **Abaixo** |
-| Condição 2 | Vela 15m em andamento: tamanho = Máx − Mín, válida se `(Máx − Mín) / Mín > 0,020%`. Setor **A** = 30% superior, **C** = 30% inferior, **B** = meio |
+| Condição 2 | Vela de referência fechada — **5 min** (padrão desde a 1.2) ou 15 min (1.0/1.1, captação só em :00/:15/:30/:45): tamanho = Máx − Mín, válida se `(Máx − Mín) / Mín > 0,020%`. Setor **A** = 30% superior, **C** = 30% inferior, **B** = meio |
 | Cruzamento | **X** = Acima + A · **Y** = Abaixo + C |
 | Preço-alvo | **W** = fechamento × 1,005 (verde) · **Z** = fechamento × 0,995 (vermelho) |
 

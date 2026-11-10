@@ -31,8 +31,15 @@ preenchidos com os valores combinados. Normalmente você só precisa:
    quando você ligar o computador (ele sobe minimizado, sem abrir a janela sozinho)
 2. Clicar em **"Iniciar"**
 
-A partir daí o programa fica rodando e mostra um pop-up no canto da tela sempre que a regra
-combinada acontecer.
+A partir daí o programa fica rodando e confere a regra a cada fechamento da vela de 5 minutos.
+Quando a regra acontece, a linha do par fica colorida no quadro (verde para W, vermelha para Z) e
+o sinal vai para o histórico.
+
+**Vela e aviso na tela (desde a versão 1.2):** o título **"Vela de 5 minutos"** mostra a vela
+usada nos setores A, B e C; o link ao lado troca para a de 15 minutos (aí a regra é conferida às
+:00, :15, :30 e :45). Em **"Aviso na tela"** você escolhe se aparece um aviso no canto da tela:
+**não mostrar** (como vem de fábrica), **some em 10 s** ou **fica até eu fechar**. As duas
+escolhas valem a partir do próximo **"Iniciar"**.
 
 ## 3.1. Trocar os pares acompanhados (até 16)
 
@@ -87,7 +94,7 @@ Toda vez que o programa avalia um fechamento, ele grava uma linha num arquivo de
 
 O bloco de status embaixo dos botões diz o que está acontecendo ("Conectando…", "Monitoramento
 ativo", "Sem conexão · tentando de novo") e a hora da próxima avaliação. A barrinha anima
-enquanto conecta e, depois, vai enchendo até o próximo fechamento de 15 minutos — enquanto ela
+enquanto conecta e, depois, vai enchendo até o próximo fechamento da vela — enquanto ela
 anda, o programa está trabalhando, mesmo que o quadro não mude. (Se o movimento incomodar, marque
 "Reduzir movimento".) Um par avaliado sem sinal mostra **"sem sinal"** — é normal.
 
