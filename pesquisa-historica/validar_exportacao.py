@@ -23,6 +23,3 @@ if extra.exists():shutil.move(str(extra),str(root/'authoring/export-inspect.ndjs
 with zipfile.ZipFile(out/'Pesquisa-Historica-Roberto-Urbano.zip','w',zipfile.ZIP_DEFLATED) as z:
  for name in ['Pesquisa-Historica-Roberto-Urbano.xlsx','INSTRUCAO-DE-USO.html']:z.write(out/name,name)
 print('XLSX salvo conferido: 66 abas, 512 tabelas e 25.600 linhas. Numeros e datas tipados. Pacotes prontos.')
-
-
-

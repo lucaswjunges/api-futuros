@@ -102,7 +102,7 @@ tamanho, guarda a versão atual em `Versões anteriores` (ao lado do `.exe`) e r
 e limpa as mais antigas 60 s depois de abrir; o `versao.json` pode limitar a atualização a
 alguns planos (`--planos`): fora deles o app não instala, só avisa uma vez e leva a `/versoes`.
 
-O build usa o spec versionado e as dependências fixadas, como o CI Windows/Python 3.12.
+O build usa o spec versionado e as dependências fixadas, como o CI Windows/Python 3.14.7.
 Reproduz o procedimento; identidade binária entre máquinas não é garantida pelo PyInstaller.
 Publicação depende de confirmação do aceite e do Pix (ver `../entrega-v1.2/RELATORIO.md`).
 Para soltar uma versão:

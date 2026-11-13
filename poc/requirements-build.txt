@@ -1,4 +1,4 @@
-# Ambiente de entrega Windows: Python 3.12 (tambem validado localmente com 3.14).
+# Ambiente de entrega Windows: Python 3.14.7.
 websockets==17.1
 pystray==0.19.5
 Pillow==12.3.0

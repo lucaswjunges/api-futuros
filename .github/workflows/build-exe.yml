@@ -18,6 +18,7 @@ on:
     branches: ["main", "feature/**"]
     paths:
       - "poc/**"
+      - "pesquisa-historica/**"
       - ".github/workflows/build-exe.yml"
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14.7"
 
       - name: Instalar dependências
         working-directory: poc
@@ -50,6 +51,12 @@ jobs:
 
       - name: Testar a pesquisa historica
         run: python -m unittest discover -s pesquisa-historica -v
+
+      - name: Reproduzir a pesquisa original offline
+        run: |
+          python pesquisa-historica/reproduzir.py
+          python pesquisa-historica/coletar.py --replay-cutoff 1794580800000
+          python pesquisa-historica/verificar.py
 
       - name: Conferir que o .exe saiu
         working-directory: poc

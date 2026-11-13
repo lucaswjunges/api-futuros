@@ -134,5 +134,3 @@ def main():
  if missing or summary['errors'] or len(summary['results'])!=64:raise SystemExit(1)
 
 if __name__=='__main__':main()
-
-
