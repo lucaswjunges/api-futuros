@@ -76,8 +76,9 @@ app a partir do código-fonte (`python janela.py`) não precisa. Tem que rodar *
 Linux, pra pegar bug de empacotamento cedo, mas o `.exe` de verdade sai só daqui).
 
 ```powershell
-pip install -r requirements-dev.txt
-pyinstaller --onefile --windowed --name AlertaFuturos --icon assets\icone_bandeja.ico --add-data "assets;assets" janela.py
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-build.txt
+.\.venv\Scripts\python -m PyInstaller --clean --noconfirm AlertaFuturos.spec
 ```
 
 O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
@@ -97,9 +98,13 @@ O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
 Desde 24/09/2026 o `.exe` confere, ao abrir, `https://futuros.blumenauti.com.br/versao.json` e,
 se houver versão mais nova, pergunta ao cliente se quer atualizar: baixa, confere SHA-256 e
 tamanho, guarda a versão atual em `Versões anteriores` (ao lado do `.exe`) e reabre sozinho
-(ver `atualizacao.py`). Desde a 1.1 (07/10/2026), a versão nova apaga as anteriores 60 s depois de
-abrir normalmente (o cliente fica só com a atual) e o `versao.json` pode limitar a atualização a
+(ver `atualizacao.py`). Desde o build 2026.10.07.3, conserva a imediatamente anterior
+e limpa as mais antigas 60 s depois de abrir; o `versao.json` pode limitar a atualização a
 alguns planos (`--planos`): fora deles o app não instala, só avisa uma vez e leva a `/versoes`.
+
+O build usa o spec versionado e as dependências fixadas, como o CI Windows/Python 3.12.
+Reproduz o procedimento; identidade binária entre máquinas não é garantida pelo PyInstaller.
+Publicação depende de confirmação do aceite e do Pix (ver `../entrega-v1.2/RELATORIO.md`).
 Para soltar uma versão:
 
 1. Aumente `VERSAO` em `versao.py` (ano.mês.dia.sequência); `NOME_VERSAO` só muda de patamar
