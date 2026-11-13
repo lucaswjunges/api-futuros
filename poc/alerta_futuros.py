@@ -11,16 +11,19 @@ Fluxo:
   2. WebSocket (fstream.binance.com/market) -> klines 5m e 15m em tempo real (até 16 pares, 1 conexão)
   3. A cada vela de 5m FECHADA (k.x == true), o RSI(2) de Wilder é sempre atualizado (precisa de
      todo fechamento de 5m pra ficar correto — pular um deixaria o valor divergente do gráfico).
-     A CAPTAÇÃO (avaliação completa + pop-up + registro) só acontece nos fechamentos que também
-     fecham uma vela de 15m (:00, :15, :30, :45 — confirmado com o cliente em 19/09/2026, item
-     4.5-b: avaliar em fechamentos de 5m que não coincidem com o fechamento de 15m usaria a vela
-     de 15m ainda "em formação", dando resultados mais móveis/menos confiáveis):
+     A CAPTAÇÃO (avaliação completa + aviso + registro) acontece nos fechamentos da VELA DE
+     REFERÊNCIA (`Parametros.vela_min`), que é a vela dos setores A/B/C e do tamanho mínimo:
+       - 5 min (padrão desde a 1.2, pedido do cliente em 06/11/2026): a própria vela de 5m que
+         acabou de fechar; avaliação a cada 5 min;
+       - 15 min (padrão da 1.0/1.1, item 4.5-b de 19/09/2026): a vela de 15m fechada; avaliação
+         só em :00, :15, :30 e :45 (nos outros fechamentos a vela de 15m ainda está "em formação").
        Condição 1  RSI(2) >= 90 -> ACIMA   |  RSI(2) <= 5 -> ABAIXO
-       Condição 2  vela de 15m (já fechada): tamanho = Máx - Mín (válida se > 0,020%)
+       Condição 2  vela de referência (já fechada): tamanho = Máx - Mín (válida se > 0,020%)
                    Setor A = 30% superior  |  Setor C = 30% inferior  |  B = meio
        Cruzamento  X = ACIMA + A  -> alvo W = fechamento + 0,5%  (verde)
                    Y = ABAIXO + C -> alvo Z = fechamento - 0,5%  (vermelho)
-  4. Pop-up no canto inferior direito por 10 s + registro em CSV.
+  4. Registro em CSV + aviso no canto inferior direito, conforme `Parametros.popup_modo`:
+     desligado (padrão desde a 1.2), some em 10 s (1.0/1.1) ou fica até o cliente fechar.
 
 Uso:
   python alerta_futuros.py               # monitora com pop-ups
@@ -78,6 +81,14 @@ CASAS_PADRAO = 4  # par novo cujo tickSize não deu pra ler: 4 casas cobre a mai
 
 MS_5M = 5 * 60 * 1000
 MS_15M = 15 * 60 * 1000
+
+# Vela de referência dos setores A/B/C e do tamanho mínimo, em minutos. 5 desde a 1.2 (pedido do
+# cliente em 06/11/2026: "tudo só em 5 min"); 15 era o da 1.0/1.1 e continua disponível na janela.
+VELAS_REFERENCIA = (5, 15)
+
+# Aviso na tela quando sai sinal. "desligado" desde a 1.2 (pedido do cliente em 06/11/2026: o sinal
+# fica só no quadro e no CSV); "temporario" é o pop-up de 10 s da 1.0/1.1; "fixo" fica até o clique.
+MODOS_POPUP = ("desligado", "temporario", "fixo")
 ATRASO_MAX_POPUP_MS = MS_5M  # sinais recuperados com mais atraso vão só para o CSV
 
 log = logging.getLogger("alerta")
@@ -88,10 +99,14 @@ class Parametros:
     rsi_periodo: int = 2
     rsi_acima: float = 90.0  # faixa "Acima": 90–100
     rsi_abaixo: float = 5.0  # faixa "Abaixo": 0–5
-    setor_pct: float = 30.0  # tamanho dos setores extremos A e C (% do tamanho da vela 15m)
-    tamanho_min_pct: float = 0.020  # vela 15m válida se (Máx − Mín) / Mín > 0,020%
+    setor_pct: float = 30.0  # tamanho dos setores extremos A e C (% do tamanho da vela de referência)
+    tamanho_min_pct: float = 0.020  # vela de referência válida se (Máx − Mín) / Mín > 0,020%
     ajuste_pct: float = 0.5  # fator de ajuste do preço-alvo GERAL (vale para quem não tem fator próprio)
-    popup_segundos: int = 10
+    popup_segundos: int = 10  # duração do aviso no modo "temporario"
+    # 1.2: os padrões são o pedido do cliente de 06/11/2026. config.json de 1.0/1.1 não tem estas
+    # chaves, então quem atualiza já abre no comportamento novo (ver configuracao._parametros_de_dict).
+    vela_min: int = 5  # vela de referência dos setores e do tamanho mínimo: 5 ou 15 (VELAS_REFERENCIA)
+    popup_modo: str = "desligado"  # MODOS_POPUP
     velas_aquecimento: int = 300  # 25 h de velas 5m: RSI idêntico ao do gráfico desde o 1º minuto
     # Fator próprio por par (pedido do cliente em 05/10/2026, versão 1.1): {"ETHUSDT": 0.8}. Par
     # que não está aqui usa ajuste_pct. Vazio = comportamento idêntico ao da 1.0.
@@ -120,10 +135,10 @@ class Avaliacao:
     fechamento: float
     rsi: float | None
     faixa: str | None  # ACIMA | ABAIXO | None
-    maxima_15m: float
-    minima_15m: float
-    tamanho_15m_pct: float
-    setor: str | None  # A | B | C | None (vela 15m inválida)
+    maxima_vela: float  # máxima/mínima/tamanho da vela de referência (5m ou 15m, ver vela_min)
+    minima_vela: float
+    tamanho_vela_pct: float
+    setor: str | None  # A | B | C | None (vela de referência pequena demais)
     sinal: str | None  # X | Y | None
     alvo: float | None
     alvo_texto: str
@@ -132,6 +147,7 @@ class Avaliacao:
     publicacao_binance_ms: float | None = None  # evento Binance (E) − fechamento da vela
     recuperada: bool = False  # vela fechada durante queda de conexão, avaliada ao reconectar
     ajuste_pct: float | None = None  # fator (%) deste par usado no Preço-Alvo (1.1: próprio ou o geral)
+    vela_min: int = 15  # vela de referência usada nesta avaliação (1.2)
 
 
 # ─────────────────────────────── Lógica pura (testável) ───────────────────────────────
@@ -185,6 +201,13 @@ def fecha_vela_15m(abertura_ms: int) -> bool:
     return (abertura_ms + MS_5M) % MS_15M == 0
 
 
+def fecha_vela_referencia(abertura_ms: int, vela_min: int) -> bool:
+    """True quando o fechamento desta vela de 5m também fecha a vela de referência — ou seja,
+    quando há captação (CSV, quadro, aviso). Com vela de 5 min é todo fechamento (1.2); com 15
+    min, só :00/:15/:30/:45 (1.0/1.1)."""
+    return (abertura_ms + MS_5M) % (vela_min * 60_000) == 0
+
+
 def faixa_rsi(rsi: float | None, p: Parametros) -> str | None:
     if rsi is None:
         return None
@@ -196,7 +219,8 @@ def faixa_rsi(rsi: float | None, p: Parametros) -> str | None:
 
 
 def setor_vela15(fechamento: float, maxima: float, minima: float, p: Parametros) -> tuple[str | None, float]:
-    """Retorna (setor, tamanho_pct). Setor None quando a vela de 15m não atinge o tamanho mínimo."""
+    """Retorna (setor, tamanho_pct) da vela de referência (5m ou 15m — o nome vem da 1.0, quando
+    só existia a de 15m). Setor None quando a vela não atinge o tamanho mínimo."""
     tamanho = maxima - minima
     tamanho_pct = tamanho / minima * 100 if minima > 0 else 0.0
     if tamanho_pct <= p.tamanho_min_pct:
@@ -261,7 +285,8 @@ def casas_de_exchange_info(dados: dict) -> dict[str, int]:
 
 
 class Ativo:
-    """Estado de um par: RSI incremental + últimas velas 5m fechadas (reconstroem a vela 15m)."""
+    """Estado de um par: RSI incremental + últimas velas 5m fechadas (reconstroem a vela de 15m
+    quando ela é a de referência)."""
 
     def __init__(self, simbolo: str, casas: int, p: Parametros):
         self.simbolo = simbolo
@@ -295,9 +320,11 @@ class Ativo:
         rsi = self._aplicar(v)
         faixa = faixa_rsi(rsi, self.p)
 
-        # Vela de 15m em andamento no fechamento da 5m = agregação das velas 5m da mesma janela.
-        # Matematicamente idêntica à vela 15m da Binance e imune a ordem de chegada das mensagens.
-        janela = v.abertura_ms // MS_15M * MS_15M
+        # Vela de referência = agregação das velas 5m da mesma janela. Com 15 min é matematicamente
+        # idêntica à vela 15m da Binance e imune a ordem de chegada das mensagens; com 5 min a
+        # janela tem uma vela só, a que acabou de fechar.
+        ms_ref = self.p.vela_min * 60_000
+        janela = v.abertura_ms // ms_ref * ms_ref
         na_janela = [x for x in self.velas if x.abertura_ms >= janela]
         maxima = max(x.maxima for x in na_janela)
         minima = min(x.minima for x in na_janela)
@@ -311,15 +338,16 @@ class Ativo:
             fechamento=v.fecha,
             rsi=rsi,
             faixa=faixa,
-            maxima_15m=maxima,
-            minima_15m=minima,
-            tamanho_15m_pct=tamanho_pct,
+            maxima_vela=maxima,
+            minima_vela=minima,
+            tamanho_vela_pct=tamanho_pct,
             setor=setor,
             sinal=sinal,
             alvo=alvo,
             alvo_texto=formatar_preco(alvo, self.casas) if alvo is not None else "",
             fechamento_texto=formatar_preco(v.fecha, self.casas),
             ajuste_pct=self.p.ajuste_de(self.simbolo),
+            vela_min=self.p.vela_min,
         )
 
 
@@ -435,9 +463,9 @@ class Monitor:
         ativo.carregar_historico([v for v in velas if v.abertura_ms <= ultima])
         for v in velas:
             if v.abertura_ms > ultima:
-                av = ativo.fechar_vela(v)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
-                if not fecha_vela_15m(v.abertura_ms):
-                    continue  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
+                av = ativo.fechar_vela(v)  # sempre atualiza o RSI(2), mesmo sem captação
+                if not fecha_vela_referencia(v.abertura_ms, self.p.vela_min):
+                    continue  # só captamos (CSV/aviso) nos fechamentos da vela de referência
                 av.latencia_ms = self.agora_binance_ms() - (v.abertura_ms + MS_5M)
                 av.recuperada = True
                 self.ao_avaliar(av)
@@ -502,9 +530,9 @@ class Monitor:
         if situacao == "lacuna":
             log.warning("%s: lacuna detectada, recompondo histórico via REST.", simbolo)
             await self._recuperar(simbolo, antes_de_ms=vela.abertura_ms)
-        av = ativo.fechar_vela(vela)  # sempre atualiza o RSI(2), mesmo fora de um fechamento de 15m
-        if not fecha_vela_15m(vela.abertura_ms):
-            return  # só captamos (CSV/pop-up) nos fechamentos que também fecham a vela de 15m
+        av = ativo.fechar_vela(vela)  # sempre atualiza o RSI(2), mesmo sem captação
+        if not fecha_vela_referencia(vela.abertura_ms, self.p.vela_min):
+            return  # só captamos (CSV/aviso) nos fechamentos da vela de referência
         fechou_ms = int(k["T"]) + 1
         av.latencia_ms = recebido_ms - fechou_ms
         if evento_ms is not None:
@@ -519,16 +547,22 @@ class Monitor:
 from tema import BORDA, OURO, PAINEL, TEXTO, TEXTO_FRACO, VERDE, VERMELHO, Tema, retangulo_arredondado  # noqa: E402
 
 
+_DURACAO_PADRAO = object()  # sentinela: Popups.mostrar sem `segundos` usa a duração da instância
+
+
 class Popups:
     """Janela própria estilo 'toast' no canto inferior direito — não o toast nativo do Windows,
     que não deixa controlar a cor do texto nem a duração exata de 10 s. Desde 22/09/2026: cantos
     arredondados (via -transparentcolor, só no Windows; fora dele fica um retângulo), barra que
-    esvazia ao longo dos 10 s pra mostrar quanto falta, e clique em qualquer ponto fecha."""
+    esvazia ao longo dos 10 s pra mostrar quanto falta, e clique em qualquer ponto fecha.
+
+    `segundos` None (1.2, modo "fixo") = o aviso não some sozinho: fica até o clique, sem a barra
+    que esvazia (no lugar dela, o texto "clique para fechar")."""
 
     LARGURA, ALTURA, MARGEM, BARRA_TAREFAS, RAIO = 340, 122, 12, 56, 10  # px de projeto (96 dpi)
     CHAVE_TRANSPARENCIA = "#010203"  # cor que o Windows torna transparente (os cantos)
 
-    def __init__(self, root, segundos: int):
+    def __init__(self, root, segundos: int | None):
         import tkinter as tk
 
         self.tk = tk
@@ -537,9 +571,11 @@ class Popups:
         self.abertos: list = []
         self.tema = Tema(root)
 
-    def mostrar(self, av: Avaliacao, titulo: str = "Alerta Futuros") -> None:
+    def mostrar(self, av: Avaliacao, titulo: str = "Alerta Futuros", segundos=_DURACAO_PADRAO) -> None:
         """`titulo` só muda no botão "Ver exemplo de alerta" da janela (SIMULAÇÃO): o exemplo usa
-        este mesmo pop-up, no mesmo canto, pra o cliente reconhecer o aviso real quando ele vier."""
+        este mesmo pop-up, no mesmo canto, pra o cliente reconhecer o aviso real quando ele vier.
+        `segundos` troca a duração só deste aviso (None = fica até o clique)."""
+        duracao = self.segundos if segundos is _DURACAO_PADRAO else segundos
         tk, px = self.tk, self.tema.px
         cor = VERDE if av.sinal == "X" else VERMELHO
         alvo = "W" if av.sinal == "X" else "Z"
@@ -581,13 +617,22 @@ class Popups:
                            font=self.tema.numeros(24, "bold"))
         self._detalhes(canvas, margem, px(98), av)
 
+        for w in (janela, canvas):
+            w.bind("<Button-1>", lambda _e, j=janela: self._fechar(j))
+        self.abertos.append(janela)
+        self._posicionar()
+        if duracao is None:  # modo "fixo": fica até o clique
+            canvas.create_text(largura - margem, altura - px(10), text="clique para fechar", anchor="e",
+                               fill=TEXTO_FRACO, font=self.tema.texto(7))
+            return
+
         y_barra = altura - px(10)
         barra = canvas.create_line(margem, y_barra, largura - margem, y_barra, fill=cor, width=px(3), capstyle="round")
         inicio = time.monotonic()
 
         def esvaziar() -> None:
             try:
-                restante = 1.0 - (time.monotonic() - inicio) / self.segundos
+                restante = 1.0 - (time.monotonic() - inicio) / duracao
                 if restante <= 0:
                     return
                 canvas.coords(barra, margem, y_barra, margem + (largura - 2 * margem) * restante, y_barra)
@@ -595,12 +640,8 @@ class Popups:
             except tk.TclError:  # pop-up já fechado por clique
                 pass
 
-        for w in (janela, canvas):
-            w.bind("<Button-1>", lambda _e, j=janela: self._fechar(j))
-        self.abertos.append(janela)
-        self._posicionar()
         janela.after(100, esvaziar)
-        janela.after(self.segundos * 1000, lambda: self._fechar(janela))
+        janela.after(duracao * 1000, lambda: self._fechar(janela))
 
     def _detalhes(self, canvas, x: float, y: float, av: Avaliacao) -> None:
         """Linha de apoio: três pares rótulo/valor, cada valor logo depois do seu rótulo."""
@@ -639,9 +680,12 @@ class Popups:
 
 
 class Registro:
-    CAMPOS = ["fechamento_5m", "par", "preco_fechamento", "rsi2", "faixa", "max_15m", "min_15m",
-              "tamanho_15m_pct", "setor", "sinal", "preco_alvo", "latencia_ms", "publicacao_binance_ms",
-              "recuperada", "fator_pct"]  # fator_pct no fim (1.1): quem já lê o CSV por coluna não quebra
+    # Colunas novas sempre no fim (fator_pct na 1.1, vela_min na 1.2): quem lê o CSV pela posição
+    # não quebra. Na 1.2 max_15m/min_15m/tamanho_15m_pct viraram *_vela (mesma posição): com a vela
+    # de 5 min o nome antigo seria mentira, e vela_min diz de qual vela são os números.
+    CAMPOS = ["fechamento_5m", "par", "preco_fechamento", "rsi2", "faixa", "max_vela", "min_vela",
+              "tamanho_vela_pct", "setor", "sinal", "preco_alvo", "latencia_ms", "publicacao_binance_ms",
+              "recuperada", "fator_pct", "vela_min"]
 
     def __init__(self, pasta: Path):
         pasta.mkdir(parents=True, exist_ok=True)
@@ -673,16 +717,17 @@ class Registro:
         fech = datetime.fromtimestamp((av.abertura_ms + MS_5M) / 1000)
         self._csv.writerow([
             f"{fech:%Y-%m-%d %H:%M}", av.simbolo, av.fechamento, _fmt(av.rsi, 2), av.faixa or "",
-            av.maxima_15m, av.minima_15m, _fmt(av.tamanho_15m_pct, 4), av.setor or "inválida",
+            av.maxima_vela, av.minima_vela, _fmt(av.tamanho_vela_pct, 4), av.setor or "inválida",
             av.sinal or "", av.alvo_texto, _fmt(av.latencia_ms, 0), _fmt(av.publicacao_binance_ms, 0),
             "sim" if av.recuperada else "", "" if av.ajuste_pct is None else f"{av.ajuste_pct:g}",
+            av.vela_min,
         ])
         self._arq.flush()
 
         rsi = f"RSI(2) {formatar_num(av.rsi):>5} {av.faixa or '':<6}" if av.rsi is not None else "RSI —"
-        setor = f"setor {av.setor}" if av.setor else "15m inválida"
+        setor = f"setor {av.setor}" if av.setor else f"{av.vela_min}m inválida"
         linha = (f"{fech:%H:%M} {av.simbolo:<9} fech {av.fechamento_texto:>11} | {rsi} | "
-                 f"15m {formatar_num(av.tamanho_15m_pct, 3)}% {setor:<12} | lat {_fmt(av.latencia_ms, 0)} ms")
+                 f"{av.vela_min}m {formatar_num(av.tamanho_vela_pct, 3)}% {setor:<12} | lat {_fmt(av.latencia_ms, 0)} ms")
         if av.recuperada:
             linha += "  (recuperada após queda)"
         if av.sinal:
@@ -733,11 +778,13 @@ def main() -> None:
     ap.add_argument("--minutos", type=float, default=0, help="encerra após N minutos (0 = contínuo)")
     ap.add_argument("--rsi-acima", type=float, default=90.0)
     ap.add_argument("--rsi-abaixo", type=float, default=5.0)
+    ap.add_argument("--vela", type=int, choices=VELAS_REFERENCIA, default=Parametros.vela_min,
+                    help="vela de referência dos setores, em minutos (padrão 5)")
     ap.add_argument("--pasta-log", type=Path, default=Path(__file__).with_name("logs"))
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
-    p = Parametros(rsi_acima=args.rsi_acima, rsi_abaixo=args.rsi_abaixo)
+    p = Parametros(rsi_acima=args.rsi_acima, rsi_abaixo=args.rsi_abaixo, vela_min=args.vela)
 
     if args.demo:
         import tkinter as tk
@@ -763,9 +810,9 @@ def main() -> None:
             fila_popups.put(av)
 
     monitor = Monitor(p, ao_avaliar)
-    log.info("Alerta Futuros — %d pares · RSI(%d) ≥ %s / ≤ %s · setores %s%% · ajuste ±%s%%",
+    log.info("Alerta Futuros — %d pares · RSI(%d) ≥ %s / ≤ %s · vela %d min · setores %s%% · ajuste ±%s%%",
              len(monitor.ativos), p.rsi_periodo, formatar_num(p.rsi_acima, 0), formatar_num(p.rsi_abaixo, 0),
-             formatar_num(p.setor_pct, 0), formatar_num(p.ajuste_pct))
+             p.vela_min, formatar_num(p.setor_pct, 0), formatar_num(p.ajuste_pct))
 
     motor = threading.Thread(target=lambda: asyncio.run(monitor.executar()), daemon=True)
     motor.start()

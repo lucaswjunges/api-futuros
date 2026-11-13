@@ -5,6 +5,25 @@ __pycache__/
 build/
 dist/
 *.spec
+!poc/AlertaFuturos.spec
+node_modules/
+.pytest_cache/
+build-entrega-v1.2/
+pesquisa-historica/cache/
+pesquisa-historica/resultados/*.json
+!pesquisa-historica/resultados/consolidado.json
+pesquisa-historica/outputs/
+pesquisa-historica/previews/
+pesquisa-historica/authoring/*.ndjson
+entrega-v1.2/privado/
+entrega-v1.2/publicar-apos-aceite/
+entrega-v1.2/teste-isolado/
+entrega-v1.2/*.zip
+entrega-v1.2/evidencias-locais/
+*.bundle
+/*.patch
+/csv-bandeja-patch.txt
+/poc/python
 
 # Logs de execução local da PoC (as evidências versionadas ficam em poc/evidencias/)
 poc/logs/

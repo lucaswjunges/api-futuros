@@ -56,7 +56,9 @@ class TestVersoes(unittest.TestCase):
         # Os apps instalados em 24/09 (2026.09.24.2) e o build 1.0 de 01/10 precisam enxergar esta.
         self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.09.24.2"))
         self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.10.01.1"))
-        self.assertEqual(atualizacao.NOME_VERSAO, "1.1")
+        # e o app do cliente hoje (1.1, publicada em 07/10) precisa enxergar a 1.2
+        self.assertTrue(eh_mais_nova(atualizacao.VERSAO, "2026.10.07.3"))
+        self.assertEqual(atualizacao.NOME_VERSAO, "1.2")
 
 
 class TestVersaoJson(unittest.TestCase):

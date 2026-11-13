@@ -27,7 +27,7 @@ ROTULOS = {
     "rsi_acima": "RSI — limite Acima",
     "rsi_abaixo": "RSI — limite Abaixo",
     "setor_pct": "Tamanho dos setores A/C",
-    "tamanho_min_pct": "Tamanho mínimo da vela 15m",
+    "tamanho_min_pct": "Tamanho mínimo da vela",
     "ajuste_pct": "Fator de ajuste do preço-alvo",
 }
 
