@@ -36,12 +36,19 @@ bloqueando a 'Vela de 15 Minutos' (deixando tudo só 5M) e bloqueando o 'Alerta 
 10 Segundos', deixando o restante da mesma forma em que está”. A fonte original
 foi identificada por essa transcrição; o WhatsApp não foi consultado diretamente.
 
-Há divergência material: a implementação apenas define os padrões, permitindo
-reativar as duas opções. A leitura literal do WhatsApp pede bloqueio. O escopo
-técnico inicial do usuário descrevia os novos padrões e exigia essa comparação
-antes de alterar regras. Foi solicitada decisão explícita sobre o bloqueio; o
-pacote atual não deve ser considerado aprovado nesse requisito até resolvê-la.
-Nenhuma mudança de regra foi feita apenas com base na mensagem encaminhada.
+Decisão posterior do responsável pela entrega, em 13/11/2026: manter as opções
+selecionáveis, com os padrões de 5 minutos e aviso desligado. A orientação foi
+“as opções selecionáveis parece a melhor opção” e dar a Roberto essa possibilidade,
+condicionada à avaliação técnica. A recomendação técnica é manter a implementação:
+o funcionamento inicial atende a 5M sem espera de 15M e sem aviso automático, e
+o retorno ao comportamento anterior exige escolha explícita. Essa decisão resolve
+a pendência interna de escopo e preserva a implementação e os pacotes existentes.
+
+O WhatsApp original, literalmente, pedia bloqueio; a decisão posterior de manter
+as opções é do responsável pela entrega. Não é confirmação de que Roberto já
+aceitou essa alternativa. Não houve alteração de código nem novo build nesta
+etapa documental. Os testes já aprovados cobrem padrões, migração e persistência
+das opções selecionadas; não foram repetidos por não haver alteração executável.
 
 Pesquisa: documento DOCX lido integralmente e e-mail encaminhado de 05/11 conferido:
 somente tabelas para leitura, sem app adicional. A planilha tem 66 abas (índice,
@@ -112,8 +119,9 @@ O DNS consultado não expôs CNAME que permita identificar o projeto. Antes de q
 deploy, conferir o domínio personalizado no projeto informado e guardar deployment
 e site completo anteriores; a página inicial baixada não substitui backup completo.
 
-Faltam confirmação do aceite e do Pix, decisão sobre o bloqueio das opções antigas,
-verificação do projeto Pages informado e backup integral. Após isso: integrar o PR revisado,
+Faltam confirmação do aceite e do Pix, verificação do projeto Pages informado
+e backup integral. O comportamento das opções foi definido pelo responsável pela
+entrega. Após a liberação comercial e a revisão: integrar o PR,
 incorporar EXE e JSON ao site completo, baixar de produção e validar hashes/tamanhos,
 testar atualização **real** 1.1 → 1.2, configurações e recuperação da versão anterior.
 Os testes automatizados não comprovam esse percurso em produção. O roteiro operacional

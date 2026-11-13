@@ -18,14 +18,13 @@ documentação e snapshot histórico de auditoria ficam versionados.
 
 Antes da publicação:
 
-1. Resolver a divergência de comportamento: o usuário forneceu a transcrição do
-   WhatsApp de Roberto ao Business de sexta-feira, 06/11/2026, 06:53:
-   “orçar uma Versão 1.2 do App, bloqueando a 'Vela de 15 Minutos' (deixando tudo
-   só 5M) e bloqueando o 'Alerta de 10 Segundos', deixando o restante da mesma
-   forma em que está”. O pacote atual muda padrões, mas permite reativar essas
-   opções. Foi solicitada decisão explícita entre bloqueá-las e manter os novos
-   padrões com opções selecionáveis, conforme o escopo técnico inicial. Até essa
-   decisão, não considerar o pacote atual aprovado quanto a esse requisito.
+1. Comportamento definido para a entrega pelo usuário em 13/11/2026: manter as
+   opções selecionáveis, com avaliação em 5 minutos e aviso desligado por padrão.
+   A vela de 5 minutos não espera fechar a de 15 minutos. O usuário pode escolher
+   15 minutos ou reativar o aviso explicitamente. A implementação e os guias já
+   correspondem a essa decisão; não é necessário gerar outro EXE por esse motivo.
+   O WhatsApp original pedia “bloquear”; a decisão posterior de manter as opções
+   é do responsável pela entrega e não comprova aceite de Roberto.
 2. Projeto Pages informado pelo usuário: `alerta-futuros-versoes`, conta Cloudflare
    do Lucas (mesma de `blumenauti.com.br`). Confirmar no painel/API autorizado que
    seu domínio personalizado é `futuros.blumenauti.com.br`, exportar o site completo
