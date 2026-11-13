@@ -18,14 +18,19 @@ documentação e snapshot histórico de auditoria ficam versionados.
 
 Antes da publicação:
 
-1. Resolver o pedido original do app: padrões 5 minutos/aviso desligado estão testados,
-   mas opções antigas continuam selecionáveis. O registro no CLAUDE.md transcreve
-   “bloquear a vela de 15 min, tudo só em 5 min” e “bloquear o alerta de 10 s”.
-   Não foi localizada nesta tarefa a mensagem original de 06/11 para esclarecer
-   remoção versus opção; nenhuma regra foi alterada por interpretação.
-2. Confirmar o projeto Pages pelo domínio personalizado `futuros.blumenauti.com.br`
-   no painel/API autorizado. Exportar a versão completa atual e anotar deployment ID.
-   O nome do domínio sozinho não identifica com segurança o projeto.
+1. Resolver a divergência de comportamento: o usuário forneceu a transcrição do
+   WhatsApp de Roberto ao Business de sexta-feira, 06/11/2026, 06:53:
+   “orçar uma Versão 1.2 do App, bloqueando a 'Vela de 15 Minutos' (deixando tudo
+   só 5M) e bloqueando o 'Alerta de 10 Segundos', deixando o restante da mesma
+   forma em que está”. O pacote atual muda padrões, mas permite reativar essas
+   opções. Foi solicitada decisão explícita entre bloqueá-las e manter os novos
+   padrões com opções selecionáveis, conforme o escopo técnico inicial. Até essa
+   decisão, não considerar o pacote atual aprovado quanto a esse requisito.
+2. Projeto Pages informado pelo usuário: `alerta-futuros-versoes`, conta Cloudflare
+   do Lucas (mesma de `blumenauti.com.br`). Confirmar no painel/API autorizado que
+   seu domínio personalizado é `futuros.blumenauti.com.br`, exportar o site completo
+   atual e anotar deployment ID. A informação foi recebida, ainda não verificada
+   diretamente. Não executar `wrangler pages deploy` antes da liberação comercial.
 3. Guardar EXE/manifesto anteriores e backup das configurações do teste isolado.
 4. Incorporar somente `assets/AlertaFuturos.exe` e `versao.json` ao site COMPLETO.
    Nunca fazer deploy da pasta parcial `publicar-apos-aceite` como site inteiro.

@@ -30,9 +30,18 @@ de 15 minutos, e aviso desligado por padrão. Configuração da 1.1 recebe esses
 ao migrar, preservando os demais valores. As opções antigas continuam selecionáveis.
 Não houve alteração de regra nesta preparação.
 
-O CLAUDE.md registra o pedido de 06/11 como “bloquear a vela de 15 min, tudo só em
-5 min” e “bloquear o alerta de 10 s”. Não foi localizada a mensagem original que
-resolva se ele queria remover as opções. Isso permanece uma decisão de escopo.
+Após a preparação, o usuário forneceu a transcrição do WhatsApp de Roberto ao
+Business de sexta-feira, 06/11/2026, 06:53: “orçar uma Versão 1.2 do App,
+bloqueando a 'Vela de 15 Minutos' (deixando tudo só 5M) e bloqueando o 'Alerta de
+10 Segundos', deixando o restante da mesma forma em que está”. A fonte original
+foi identificada por essa transcrição; o WhatsApp não foi consultado diretamente.
+
+Há divergência material: a implementação apenas define os padrões, permitindo
+reativar as duas opções. A leitura literal do WhatsApp pede bloqueio. O escopo
+técnico inicial do usuário descrevia os novos padrões e exigia essa comparação
+antes de alterar regras. Foi solicitada decisão explícita sobre o bloqueio; o
+pacote atual não deve ser considerado aprovado nesse requisito até resolvê-la.
+Nenhuma mudança de regra foi feita apenas com base na mensagem encaminhada.
 
 Pesquisa: documento DOCX lido integralmente e e-mail encaminhado de 05/11 conferido:
 somente tabelas para leitura, sem app adicional. A planilha tem 66 abas (índice,
@@ -94,15 +103,17 @@ manifesto: 21.647.990 bytes, SHA-256
 Cópias locais em `entrega-v1.2/evidencias-locais/`. Acesso urllib recebeu 403;
 curl com User-Agent de navegador conseguiu baixar e a integridade foi conferida.
 
-O projeto correto do Cloudflare Pages **ainda não foi identificado**. Não há token
-Cloudflare disponível no ambiente consultado. A ferramenta de interface interrompeu
-o acesso por não conseguir determinar a URL do navegador com segurança. O DNS
-consultado não expôs CNAME que permita identificar o projeto. É necessário conferir
-o domínio personalizado no painel/API da conta autorizada e guardar deployment e
-site completo anteriores; a página inicial baixada não substitui esse backup completo.
+O usuário informou o projeto Cloudflare Pages **`alerta-futuros-versoes`**, na conta
+do **Lucas**, a mesma de `blumenauti.com.br`. Essa identificação foi recebida, mas
+a associação ao domínio ainda não foi verificada diretamente no painel/API.
+Não há token Cloudflare disponível no ambiente consultado. A ferramenta de interface
+interrompeu o acesso por não conseguir determinar a URL do navegador com segurança.
+O DNS consultado não expôs CNAME que permita identificar o projeto. Antes de qualquer
+deploy, conferir o domínio personalizado no projeto informado e guardar deployment
+e site completo anteriores; a página inicial baixada não substitui backup completo.
 
-Faltam confirmação do aceite e do Pix, resolução da interpretação do pedido original,
-identificação do projeto Pages e backup integral. Após isso: integrar o PR revisado,
+Faltam confirmação do aceite e do Pix, decisão sobre o bloqueio das opções antigas,
+verificação do projeto Pages informado e backup integral. Após isso: integrar o PR revisado,
 incorporar EXE e JSON ao site completo, baixar de produção e validar hashes/tamanhos,
 testar atualização **real** 1.1 → 1.2, configurações e recuperação da versão anterior.
 Os testes automatizados não comprovam esse percurso em produção. O roteiro operacional
@@ -111,3 +122,8 @@ está em `LEIA-ANTES-DE-PUBLICAR.md`.
 Condição comercial preservada: **R$ 720,00 no aceite**, Pix no CNPJ
 **53.700.754/0001-10**, entrega em até **dois dias úteis após o Pix**.
 Nenhuma confirmação comercial foi presumida e nenhuma publicação foi executada.
+
+O retorno encaminhado informa que o aditivo e a planilha foram recebidos e que a
+conferência de conteúdo contra o DOCX será feita. Isso não comprova o aceite final
+nem o recebimento do Pix. A frase “a publicação ... eu faço quando você liberar”
+também não constitui liberação para publicar; permanece a condição comercial.
