@@ -1,5 +1,5 @@
 from pathlib import Path
-import json,datetime,math
+import json,datetime,math,hashlib
 from coletar import analyze
 p=Path(__file__).parent; d=json.loads((p/'resultados/consolidado.json').read_text()); total=0
 for asset in d['results']:
@@ -21,5 +21,9 @@ for asset in d['results']:
    assert math.isclose(x,row['first'],abs_tol=1e-14) and math.isclose(y,row['second'],abs_tol=1e-14)
    total+=1
 assert total==25600
+snapshot=json.loads((p/'fontes/snapshot-original.json').read_text())
+if d['cutoff_ms']==snapshot['cutoff_ms']:
+ canonical=json.dumps({a['symbol']:a for a in d['results']},sort_keys=True,separators=(',',':')).encode()
+ assert hashlib.sha256(canonical).hexdigest()==snapshot['results_canonical_sha256'], 'Replay difere da coleta original'
 print('Conferidos:',len(d['results']),'ativos, 512 tabelas,',total,'linhas; sequencia, extremos, percentuais e contagem OK.')
 (p/'resultados/verificacao.txt').write_text('64 ativos; 512 tabelas; 25.600 ocorrencias. Sem lacunas nos candles. Extremos, formulas e quantidades conferidos em todas as ocorrencias. Os quatro exemplos do roteiro passaram nos testes.',encoding='utf-8')

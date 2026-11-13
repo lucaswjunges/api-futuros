@@ -67,5 +67,6 @@
     "DOTUSDT.json": "b5d2aac8d1a2f842997a3b18bd94b5a12bad2f91e562abf9502c235a248cac2b",
     "JUPUSDT.json": "edace23b495ce52145c458675bd442a9f40c22c2015a569584baa582fbca6bd5"
   },
-  "consolidado_sha256": "be520663e8557f2404e0d3b6ba9e73cef2b937df93b3d207a73b89322dcc691a"
+  "consolidado_sha256": "be520663e8557f2404e0d3b6ba9e73cef2b937df93b3d207a73b89322dcc691a",
+  "results_canonical_sha256": "a820399d39637c474c36ddedece57aa0f913ed2b024aab03a7c7c1bf38fe9f50"
 }
