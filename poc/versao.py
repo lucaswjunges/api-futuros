@@ -12,6 +12,6 @@ Dois valores, de propósito:
                  versão existe e leva à página de versões (ver atualizacao.incluida_no_plano).
 """
 
-VERSAO = "2026.10.07.3"
-NOME_VERSAO = "1.1"
+VERSAO = "2026.11.10.1"
+NOME_VERSAO = "1.2"
 PLANO = "completa"

@@ -67,6 +67,11 @@ class TestProximaAvaliacao(unittest.TestCase):
     def test_vira_o_dia(self):
         self.assertEqual(proxima_avaliacao(datetime(2026, 9, 22, 23, 50)), datetime(2026, 9, 23, 0, 0))
 
+    def test_com_vela_de_5_min_e_o_proximo_multiplo_de_5(self):
+        self.assertEqual(proxima_avaliacao(datetime(2026, 11, 10, 12, 7, 10), 5), datetime(2026, 11, 10, 12, 10))
+        self.assertEqual(proxima_avaliacao(datetime(2026, 11, 10, 12, 10, 0), 5), datetime(2026, 11, 10, 12, 15))
+        self.assertEqual(proxima_avaliacao(datetime(2026, 11, 10, 23, 58), 5), datetime(2026, 11, 11, 0, 0))
+
 
 class TestAlturaVisivelDasLinhas(unittest.TestCase):
     """Quanto do quadro de situação aparece sem rolagem (teto de 16 pares, 23/09/2026).

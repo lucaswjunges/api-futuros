@@ -1,9 +1,10 @@
 """Teste ao vivo (E2E): derruba a conexão cobrindo a virada de uma vela 5m e verifica que,
 ao reconectar, a vela é avaliada (captada) para os 8 pares (recuperada=True). Leva ~2 a 10 min.
 
-A vela testada precisa ser uma que também fecha uma vela de 15m (item 4.5-b, confirmado com o
-cliente em 19/09/2026: só nesses fechamentos há captação/CSV/pop-up) — senão o teste reportaria
-FALHOU mesmo com a recuperação funcionando certinho, só porque aquela vela nunca seria captada.
+A vela testada é uma que também fecha uma vela de 15m (item 4.5-b, confirmado com o cliente em
+19/09/2026: com a vela de referência de 15 min só nesses fechamentos há captação/CSV/pop-up) —
+assim o teste vale para as duas velas de referência (desde a 1.2 o padrão é 5 min, que capta todo
+fechamento, inclusive este).
 
 Uso: python queda_simulada_ao_vivo.py   (grava log/CSV em evidencias/)
 """

@@ -3,9 +3,10 @@ Configuração persistida da janela (Opção B — Completa).
 =========================================================
 
 Guarda os campos que o cliente pediu na janela (item 4.5-d e Seção 5 da proposta):
-limites do RSI, tamanho dos setores A/C, tamanho mínimo da vela 15m, fator de
-ajuste do preço-alvo (o geral e, desde a 1.1, o próprio de cada par), e a opção de
-iniciar junto com o Windows.
+limites do RSI, tamanho dos setores A/C, tamanho mínimo da vela, fator de
+ajuste do preço-alvo (o geral e, desde a 1.1, o próprio de cada par), a opção de
+iniciar junto com o Windows e, desde a 1.2, a vela de referência (5 ou 15 min) e o
+modo do aviso na tela (desligado, some em 10 s ou fica até fechar).
 
 Ficam de fora deste módulo, de propósito, tudo que precisa de Tkinter ou do
 Monitor (rede/UI) — assim dá pra testar carregar/salvar/validar sem display e
@@ -22,7 +23,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-from alerta_futuros import LIMITE_PARES, PARES, Parametros
+from alerta_futuros import LIMITE_PARES, MODOS_POPUP, PARES, VELAS_REFERENCIA, Parametros
 
 log = logging.getLogger("alerta.configuracao")
 
@@ -59,6 +60,13 @@ def _parametros_de_dict(dados: dict) -> Parametros:
     validos = {f.name for f in fields(Parametros)}
     lidos = {k: v for k, v in dados.items() if k in validos}
     lidos["ajuste_por_par"] = _ajustes_de_dict(lidos.get("ajuste_por_par"))
+    # 1.2: valor estranho volta ao padrão sem derrubar o resto. Config da 1.0/1.1 não tem as chaves
+    # e também cai no padrão (vela de 5 min, aviso desligado) — de propósito: é o pedido do cliente
+    # de 06/11/2026, e quem atualiza deve abrir já no comportamento novo, sem ter de mexer na tela.
+    if lidos.get("vela_min") not in VELAS_REFERENCIA or isinstance(lidos.get("vela_min"), bool):
+        lidos.pop("vela_min", None)
+    if lidos.get("popup_modo") not in MODOS_POPUP:
+        lidos.pop("popup_modo", None)
     return Parametros(**lidos)
 
 
@@ -136,7 +144,7 @@ def validar(p: Parametros) -> list[str]:
     if not (0 < p.setor_pct < 50):
         erros.append("Tamanho dos setores A/C deve ficar entre 0% e 50% (sobra espaço pro setor B do meio).")
     if p.tamanho_min_pct < 0:
-        erros.append("Tamanho mínimo da vela de 15m não pode ser negativo.")
+        erros.append("Tamanho mínimo da vela não pode ser negativo.")
     if p.ajuste_pct <= 0:
         erros.append("Fator de ajuste do preço-alvo deve ser maior que zero.")
     ruins = [s for s, v in p.ajuste_por_par.items() if not (0 < v < 100)]

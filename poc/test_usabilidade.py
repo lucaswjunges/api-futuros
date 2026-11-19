@@ -57,6 +57,10 @@ class TestTempoAteAvaliacao(unittest.TestCase):
         self.assertAlmostEqual(fracao_do_intervalo(datetime(2026, 9, 24, 10, 7, 30)), 0.5)
         self.assertAlmostEqual(fracao_do_intervalo(datetime(2026, 9, 24, 10, 29, 59)), 899 / 900)
 
+    def test_fracao_do_intervalo_de_5_minutos(self):
+        self.assertEqual(fracao_do_intervalo(datetime(2026, 11, 10, 10, 5, 0), 5), 0.0)
+        self.assertAlmostEqual(fracao_do_intervalo(datetime(2026, 11, 10, 10, 7, 30), 5), 0.5)
+
     def test_contagem_regressiva(self):
         agora = datetime(2026, 9, 24, 10, 14, 1)
         self.assertEqual(contagem_regressiva(agora, datetime(2026, 9, 24, 10, 15)), "00:59")
@@ -179,10 +183,47 @@ class TestJanelaReal(unittest.TestCase):
 
     def test_sinal_mostra_popup_e_conta(self):
         self.sessao(conectado=True)
+        self.app.config.parametros.popup_modo = "temporario"  # o "some em 10 s" da 1.1
         self.app.fila.put(_avaliacao())
         self.app._processar()
         self.app.popups.mostrar.assert_called_once()
         self.assertEqual(self.app.sinais, 1)
+
+    def test_aviso_desligado_sinal_so_no_quadro(self):
+        """1.2 (padrão, pedido do cliente em 06/11/2026): sem pop-up; o sinal conta e tinge o quadro."""
+        self.sessao(conectado=True)
+        self.assertEqual(self.app.config.parametros.popup_modo, "desligado")
+        self.app.fila.put(_avaliacao())
+        self.app._processar()
+        self.app.popups.mostrar.assert_not_called()
+        self.assertEqual(self.app.sinais, 1)
+        itens = self.app.painel._linhas["BTCUSDT"]
+        self.assertIn("W", self.app.painel.corpo.itemcget(itens["sinal"], "text"))
+        self.assertIn("quadro", self.app.rotulo_orientacao.cget("text"))
+
+    def test_padrao_da_1_2_na_tela(self):
+        self.assertEqual(self.app.rotulo_titulo_vela.cget("text"), "Vela de 5 minutos")
+        self.assertEqual(self.app.var_popup.get(), "não mostrar")
+        self.assertEqual(self.app.rotulo_proxima.cget("text"), "Avaliações a cada 5 minutos.")
+
+    def test_trocar_vela_e_aviso_vale_no_iniciar_e_fica_salvo(self):
+        self.app.trocar_vela()
+        self.assertEqual(self.app.rotulo_titulo_vela.cget("text"), "Vela de 15 minutos")
+        self.app.var_popup.set(janela.rotulos_popup(10)["fixo"])
+        with patch("janela.pares_desconhecidos", return_value=[]), \
+             patch("janela.threading.Thread"), patch("janela.Registro"):
+            self.app.iniciar()
+        p = self.app.config.parametros
+        self.assertEqual((p.vela_min, p.popup_modo), (15, "fixo"))
+        self.assertEqual(self.app.monitor.p.vela_min, 15)
+        self.assertIsNone(self.app.popups.segundos)  # "fica até eu fechar"
+        from configuracao import carregar
+        salvo = carregar(Path(self.tmp.name) / "config.json").parametros
+        self.assertEqual((salvo.vela_min, salvo.popup_modo), (15, "fixo"))
+        # rodando, o link e o menu ficam travados
+        self.app.trocar_vela()
+        self.assertEqual(self.app.vela_min, 15)
+        self.assertEqual(self.app.menu_popup.cget("state"), "disabled")
 
     def test_depois_de_parar_nao_mostra_aviso_atrasado(self):
         self.sessao(conectado=True)
@@ -213,6 +254,7 @@ class TestJanelaReal(unittest.TestCase):
         self.app.mostrar_exemplo()
         args, kwargs = self.app.popups.mostrar.call_args
         self.assertIn("SIMULAÇÃO", kwargs["titulo"])
+        self.assertEqual(kwargs["segundos"], 10)  # com o aviso desligado, o exemplo some sozinho
         self.assertTrue(self.app.fila.empty())
         self.app.registro.gravar.assert_not_called()
         self.assertEqual((self.app.avaliacoes, self.app.sinais), (0, 0))

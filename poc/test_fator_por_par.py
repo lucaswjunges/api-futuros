@@ -65,9 +65,10 @@ class TestRegistroCsv(unittest.TestCase):
             registro.gravar(av)
             registro.fechar()
             cabecalho, linha = registro.caminho.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(cabecalho.split(";")[-1], "fator_pct")
-        self.assertEqual(cabecalho.split(";")[:14], Registro.CAMPOS[:14])  # colunas da 1.0 no mesmo lugar
-        self.assertEqual(linha.split(";")[-1], "0.8")
+        # 1.2 acrescentou vela_min DEPOIS de fator_pct: as colunas da 1.0/1.1 continuam no mesmo lugar
+        self.assertEqual(cabecalho.split(";")[14], "fator_pct")
+        self.assertEqual(cabecalho.split(";")[:14], Registro.CAMPOS[:14])
+        self.assertEqual(linha.split(";")[14], "0.8")
 
 
 class TestConfigJson(unittest.TestCase):

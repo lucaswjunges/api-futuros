@@ -1,0 +1,1 @@
+64 ativos; 512 tabelas; 25.600 ocorrencias. Sem lacunas nos candles. Extremos, formulas e quantidades conferidos em todas as ocorrencias. Os quatro exemplos do roteiro passaram nos testes.

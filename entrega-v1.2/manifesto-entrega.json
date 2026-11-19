@@ -1,0 +1,26 @@
+{
+  "App-1.2/AlertaFuturos.exe": {
+    "tamanho": 22712089,
+    "sha256": "79b6ba46c670bbabc2bff2767ae587fc974a6e6d411a194db0ae32741b751149"
+  },
+  "App-1.2/versao.json": {
+    "tamanho": 371,
+    "sha256": "0321ef5a6a7282b3059d07ee7f7b0c9b9cee943ee1ac6d8c9c9a5605e0fd0cc6"
+  },
+  "App-1.2/GUIA-INSTALACAO-CLIENTE.md": {
+    "tamanho": 6114,
+    "sha256": "365e48e27be875caf0497ca990928ed4685eecd560c7c1a97adce1d3cde058e0"
+  },
+  "App-1.2/GUIA-INSTALACAO-CLIENTE.html": {
+    "tamanho": 13003,
+    "sha256": "bf6094e0c9b8bd852ede6810a5f06c5b99872194458926608983637b167b21a1"
+  },
+  "Pesquisa-Historica/Pesquisa-Historica-Roberto-Urbano.xlsx": {
+    "tamanho": 1416511,
+    "sha256": "e5c474fb4b5ee4fa4ab06ec6fa36ea775d975b0ac76d368055c77b0ba7e6fee3"
+  },
+  "Pesquisa-Historica/INSTRUCAO-DE-USO.html": {
+    "tamanho": 2609,
+    "sha256": "110b65845d4dbf70d244bcb386ca59c6e447b52b67b36a51d14c9e80aa712c99"
+  }
+}

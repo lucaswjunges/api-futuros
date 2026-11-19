@@ -1,5 +1,5 @@
 """
-Componentes desenhados da janela (Canvas): indicador de estado, diagrama da vela de 15 minutos e o
+Componentes desenhados da janela (Canvas): indicador de estado, diagrama da vela de referência e o
 quadro de situação dos pares. Só desenho — nenhuma regra de negócio mora aqui (RSI, setor e
 cruzamento continuam só em alerta_futuros.py). As funções puras do topo (alturas_setores,
 posicao_no_eixo, estado_do_monitor, proxima_avaliacao) ficam fora das classes de propósito, pra
@@ -62,21 +62,21 @@ def estado_do_monitor(iniciado: bool, motor_vivo: bool, conectado: bool, reconex
     return "conectando", "Conectando…"
 
 
-def proxima_avaliacao(agora: datetime) -> datetime:
-    """Próximo fechamento que também fecha uma vela de 15m (:00, :15, :30, :45) — item 4.5-b:
-    é só nesses instantes que o quadro muda, então a janela avisa o horário em vez de deixar o
-    cliente achando que travou nos primeiros minutos."""
+def proxima_avaliacao(agora: datetime, minutos_vela: int = 15) -> datetime:
+    """Próximo fechamento da vela de referência — com 15 min, :00/:15/:30/:45 (item 4.5-b); com
+    5 min (1.2), o próximo múltiplo de 5. É só nesses instantes que o quadro muda, então a janela
+    avisa o horário em vez de deixar o cliente achando que travou."""
     base = agora.replace(second=0, microsecond=0)
-    minutos = (base.minute // 15 + 1) * 15
+    minutos = (base.minute // minutos_vela + 1) * minutos_vela
     return base.replace(minute=0) + timedelta(minutes=minutos)
 
 
-def fracao_do_intervalo(agora: datetime) -> float:
-    """Quanto do intervalo de 15 minutos atual já passou (0.0 logo após :00/:15/:30/:45, perto de
+def fracao_do_intervalo(agora: datetime, minutos_vela: int = 15) -> float:
+    """Quanto do intervalo da vela de referência já passou (0.0 logo após um fechamento, perto de
     1.0 logo antes do próximo). É o que a barra de espera mostra com o monitor conectado: o tempo
     até a próxima avaliação — NUNCA a chance de sair um sinal."""
-    segundos = (agora.minute % 15) * 60 + agora.second + agora.microsecond / 1e6
-    return min(max(segundos / 900.0, 0.0), 1.0)
+    segundos = (agora.minute % minutos_vela) * 60 + agora.second + agora.microsecond / 1e6
+    return min(max(segundos / (minutos_vela * 60.0), 0.0), 1.0)
 
 
 def contagem_regressiva(agora: datetime, alvo: datetime) -> str:
@@ -128,7 +128,7 @@ class Indicador(tk.Frame):
 
 
 class DiagramaVela15(tk.Canvas):
-    """Vela de 15 minutos com os setores A (topo), B (meio) e C (base) na proporção do campo
+    """Vela de referência (5 ou 15 min) com os setores A (topo), B (meio) e C (base) na proporção do campo
     "setores" — a explicação visual do que o documento do cliente chama de setor. Redesenhada a
     cada tecla digitada no campo, pra mostrar o que o número significa."""
 
@@ -165,7 +165,7 @@ class DiagramaVela15(tk.Canvas):
 
 class PainelPares(tk.Frame):
     """Quadro de situação: uma linha por par com o RSI(2) como marcador num eixo (faixas "Abaixo"
-    e "Acima" tingidas), o setor da vela de 15m, o último sinal (W/Z + alvo), o fechamento e a
+    e "Acima" tingidas), o setor da vela de referência, o último sinal (W/Z + alvo), o fechamento e a
     hora. O cabeçalho carrega o mesmo eixo com os números dos limites, alinhado às linhas — é a
     legenda e a régua ao mesmo tempo.
 
@@ -366,7 +366,7 @@ class BarraEspera(tk.Canvas):
     não muda (definido no teste de usabilidade de 21/09/2026 e reintroduzido em 24/09/2026).
 
     - conectando/reconectando: um trecho dourado corre de um lado pro outro (animação);
-    - conectado: a barra enche em ciano ao longo dos 15 minutos até a próxima avaliação;
+    - conectado: a barra enche em ciano até a próxima avaliação (5 ou 15 min, conforme a vela);
     - parado: só o trilho.
     "Reduzir movimento" (na janela) troca a animação por barra parada — o texto de status continua
     dizendo a mesma coisa, então nada de informação depende do movimento."""

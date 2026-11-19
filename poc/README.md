@@ -2,14 +2,15 @@
 
 Prova de conceito do app de alertas: lê **somente dados públicos** da Binance Futuros
 (sem conta, sem API key, sem ordens), avalia a regra do cliente a cada fechamento de
-vela de 5 minutos e mostra um pop-up por 10 s quando há cruzamento verdadeiro.
+vela de 5 minutos e marca o sinal no quadro e no CSV quando há cruzamento verdadeiro. O aviso na
+tela (pop-up) é opcional desde a 1.2: desligado (padrão), some em 10 s ou fica até o clique.
 
 ## Regra implementada
 
 | Etapa | Regra |
 |---|---|
 | Condição 1 | RSI(2) de Wilder no fechamento da vela 5m: `≥ 90` → **Acima** · `≤ 5` → **Abaixo** |
-| Condição 2 | Vela 15m em andamento: tamanho = Máx − Mín, válida se `(Máx − Mín) / Mín > 0,020%`. Setor **A** = 30% superior, **C** = 30% inferior, **B** = meio |
+| Condição 2 | Vela de referência fechada — **5 min** (padrão desde a 1.2) ou 15 min (1.0/1.1, captação só em :00/:15/:30/:45): tamanho = Máx − Mín, válida se `(Máx − Mín) / Mín > 0,020%`. Setor **A** = 30% superior, **C** = 30% inferior, **B** = meio |
 | Cruzamento | **X** = Acima + A · **Y** = Abaixo + C |
 | Preço-alvo | **W** = fechamento × 1,005 (verde) · **Z** = fechamento × 0,995 (vermelho) |
 
@@ -75,8 +76,9 @@ app a partir do código-fonte (`python janela.py`) não precisa. Tem que rodar *
 Linux, pra pegar bug de empacotamento cedo, mas o `.exe` de verdade sai só daqui).
 
 ```powershell
-pip install -r requirements-dev.txt
-pyinstaller --onefile --windowed --name AlertaFuturos --icon assets\icone_bandeja.ico --add-data "assets;assets" janela.py
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-build.txt
+.\.venv\Scripts\python -m PyInstaller --clean --noconfirm AlertaFuturos.spec
 ```
 
 O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
@@ -96,9 +98,13 @@ O `.exe` final fica em `dist\AlertaFuturos.exe`. Notas:
 Desde 24/09/2026 o `.exe` confere, ao abrir, `https://futuros.blumenauti.com.br/versao.json` e,
 se houver versão mais nova, pergunta ao cliente se quer atualizar: baixa, confere SHA-256 e
 tamanho, guarda a versão atual em `Versões anteriores` (ao lado do `.exe`) e reabre sozinho
-(ver `atualizacao.py`). Desde a 1.1 (07/10/2026), a versão nova apaga as anteriores 60 s depois de
-abrir normalmente (o cliente fica só com a atual) e o `versao.json` pode limitar a atualização a
+(ver `atualizacao.py`). Desde o build 2026.10.07.3, conserva a imediatamente anterior
+e limpa as mais antigas 60 s depois de abrir; o `versao.json` pode limitar a atualização a
 alguns planos (`--planos`): fora deles o app não instala, só avisa uma vez e leva a `/versoes`.
+
+O build usa o spec versionado e as dependências fixadas, como o CI Windows/Python 3.14.7.
+Reproduz o procedimento; identidade binária entre máquinas não é garantida pelo PyInstaller.
+Publicação depende de confirmação do aceite e do Pix (ver `../entrega-v1.2/RELATORIO.md`).
 Para soltar uma versão:
 
 1. Aumente `VERSAO` em `versao.py` (ano.mês.dia.sequência); `NOME_VERSAO` só muda de patamar
